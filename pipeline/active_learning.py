@@ -78,7 +78,7 @@ def calculate_disagreement_score(
     if not model_boxes or not sam3_boxes:
         return 1.0  # One empty, maximum disagreement
 
-    # Find matches using Hungarian algorithm (simplified greedy approach)
+    # Find matches using greedy algorithm (approximation of Hungarian matching)
     matched_model = set()
     matched_sam3 = set()
     low_iou_matches = 0
@@ -172,13 +172,16 @@ def load_yolo_annotations(label_path: Path) -> List[Tuple]:
     """
     boxes = []
     if label_path.exists():
-        with open(label_path) as f:
-            for line in f:
-                if line.strip():
-                    parts = line.strip().split()
-                    class_id = int(parts[0])
-                    x, y, w, h = map(float, parts[1:])
-                    boxes.append((class_id, x, y, w, h))
+        try:
+            with open(label_path, encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        parts = line.strip().split()
+                        class_id = int(parts[0])
+                        x, y, w, h = map(float, parts[1:])
+                        boxes.append((class_id, x, y, w, h))
+        except (IOError, OSError, ValueError):
+            pass  # Return empty list if file is corrupted
     return boxes
 
 
@@ -203,8 +206,12 @@ def score_all_images(
     # Get detection count distribution
     count_distribution = Counter()
     for label_file in working_dir.glob("*.txt"):
-        num_detections = sum(1 for line in open(label_file) if line.strip())
-        count_distribution[num_detections] += 1
+        try:
+            with open(label_file, encoding='utf-8') as f:
+                num_detections = sum(1 for line in f if line.strip())
+            count_distribution[num_detections] += 1
+        except (IOError, OSError):
+            pass  # Skip corrupted files
 
     # Load model if available
     model = YOLO(str(model_path)) if model_path and model_path.exists() else None
@@ -224,31 +231,37 @@ def score_all_images(
 
         # Get model predictions
         if model:
-            results = model.predict(str(img_file), verbose=False)
-            model_boxes = []
-            confidences = []
+            try:
+                results = model.predict(str(img_file), verbose=False)
+                model_boxes = []
+                confidences = []
 
-            if results and len(results) > 0:
-                result = results[0]
-                if result.boxes is not None and len(result.boxes) > 0:
-                    for box in result.boxes:
-                        # Convert to YOLO format
-                        xyxy = box.xyxy[0].cpu().numpy()
-                        conf = float(box.conf[0])
-                        cls = int(box.cls[0])
+                if results and len(results) > 0:
+                    result = results[0]
+                    if result.boxes is not None and len(result.boxes) > 0:
+                        for box in result.boxes:
+                            # Convert to YOLO format
+                            xyxy = box.xyxy[0].cpu().numpy()
+                            conf = float(box.conf[0])
+                            cls = int(box.cls[0])
 
-                        # Convert xyxy to xywh (normalized)
-                        img_h, img_w = result.orig_shape
-                        x = ((xyxy[0] + xyxy[2]) / 2) / img_w
-                        y = ((xyxy[1] + xyxy[3]) / 2) / img_h
-                        w = (xyxy[2] - xyxy[0]) / img_w
-                        h = (xyxy[3] - xyxy[1]) / img_h
+                            # Convert xyxy to xywh (normalized)
+                            img_h, img_w = result.orig_shape
+                            x = ((xyxy[0] + xyxy[2]) / 2) / img_w
+                            y = ((xyxy[1] + xyxy[3]) / 2) / img_h
+                            w = (xyxy[2] - xyxy[0]) / img_w
+                            h = (xyxy[3] - xyxy[1]) / img_h
 
-                        model_boxes.append((cls, x, y, w, h))
-                        confidences.append(conf)
+                            model_boxes.append((cls, x, y, w, h))
+                            confidences.append(conf)
 
-            uncertainty = calculate_uncertainty_score(confidences)
-            disagreement = calculate_disagreement_score(model_boxes, sam3_boxes)
+                uncertainty = calculate_uncertainty_score(confidences)
+                disagreement = calculate_disagreement_score(model_boxes, sam3_boxes)
+            except Exception as e:
+                # Log error and use defaults
+                print(f"⚠️  Model prediction failed for {img_file.name}: {e}")
+                uncertainty = 0.5
+                disagreement = calculate_disagreement_score([], sam3_boxes) if sam3_boxes else 0.0
         else:
             # No model yet, use defaults
             uncertainty = 0.5
@@ -283,7 +296,7 @@ def save_priority_queue(
     """
     from datetime import datetime
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding='utf-8') as f:
         f.write(f"# Generated: {datetime.now().isoformat()}\n")
         if model_version:
             f.write(f"# Model: {model_version}\n")
