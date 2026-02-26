@@ -1,0 +1,26 @@
+project_name: "yolo-iterative-pipeline"
+classes:
+  - "class1"
+  - "class2"
+  - "class3"
+
+# Trigger settings
+trigger_threshold: 50
+early_trigger: 25
+min_train_images: 50
+
+# Data splits
+eval_split_ratio: 0.15
+stratify: true
+
+# Active learning weights
+uncertainty_weight: 0.40
+disagreement_weight: 0.35
+diversity_weight: 0.25
+
+# Notifications
+desktop_notify: true
+slack_webhook: null
+
+# Cleanup
+keep_last_n_checkpoints: 10
