@@ -8,11 +8,15 @@ def validate_bbox_coords(x: float, y: float, w: float, h: float) -> Tuple[bool, 
     """Validate YOLO bounding box coordinates.
 
     Args:
-        x, y: Center coordinates (normalized 0-1)
-        w, h: Width and height (normalized 0-1)
+        x, y: Center coordinates (normalized 0-1, inclusive)
+        w, h: Width and height (normalized 0-1, exclusive of 0)
 
     Returns:
         (is_valid, error_message)
+
+    Note:
+        - Boxes can touch image edges (x=0, y=0, x=1, y=1 are valid)
+        - Zero-width or zero-height boxes are invalid (w > 0, h > 0)
     """
     if not (0 <= x <= 1):
         return False, f"Center x coordinate={x} out of range [0, 1]"
@@ -68,7 +72,7 @@ def validate_annotation_file(
         return False, ["File does not exist"]
 
     errors = []
-    with open(label_path) as f:
+    with open(label_path, encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             if line.strip():  # Skip empty lines
                 is_valid, error = validate_yolo_annotation(line, num_classes)
@@ -118,11 +122,19 @@ def get_class_distribution(label_files: List[Path]) -> Dict[int, int]:
     class_counts = defaultdict(int)
 
     for label_file in label_files:
-        with open(label_file) as f:
-            for line in f:
-                if line.strip():
-                    class_id = int(line.split()[0])
-                    class_counts[class_id] += 1
+        try:
+            with open(label_file, encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            parts = line.split()
+                            if len(parts) >= 1:
+                                class_id = int(parts[0])
+                                class_counts[class_id] += 1
+                        except (ValueError, IndexError):
+                            continue  # Skip invalid lines
+        except (IOError, OSError):
+            continue  # Skip corrupted files
 
     return dict(class_counts)
 
@@ -148,6 +160,12 @@ def sample_eval_set(
     Returns:
         List of sampled label file paths
     """
+    # Input validation
+    if not 0 < split_ratio < 1:
+        raise ValueError(f"split_ratio must be between 0 and 1, got {split_ratio}")
+    if not verified_dir.exists():
+        raise FileNotFoundError(f"Directory does not exist: {verified_dir}")
+
     random.seed(random_seed)
 
     # Get all label files
@@ -162,11 +180,19 @@ def sample_eval_set(
         class_groups = defaultdict(list)
         for label_file in label_files:
             class_counts = defaultdict(int)
-            with open(label_file) as f:
-                for line in f:
-                    if line.strip():
-                        class_id = int(line.split()[0])
-                        class_counts[class_id] += 1
+            try:
+                with open(label_file, encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            try:
+                                parts = line.split()
+                                if len(parts) >= 1:
+                                    class_id = int(parts[0])
+                                    class_counts[class_id] += 1
+                            except (ValueError, IndexError):
+                                continue  # Skip invalid lines
+            except (IOError, OSError):
+                continue  # Skip corrupted files
 
             if class_counts:
                 primary_class = max(class_counts, key=class_counts.get)
@@ -197,7 +223,21 @@ def sample_eval_set(
     # Move sampled files to eval directory
     eval_dir.mkdir(parents=True, exist_ok=True)
     for label_file in sampled:
+        # Move label file
         dest = eval_dir / label_file.name
+        if dest.exists():
+            dest.unlink()
         shutil.move(str(label_file), str(dest))
+
+        # Find and move corresponding image file
+        image_extensions = [".jpg", ".jpeg", ".png", ".bmp"]
+        for ext in image_extensions:
+            img_file = verified_dir / f"{label_file.stem}{ext}"
+            if img_file.exists():
+                dest_img = eval_dir / img_file.name
+                if dest_img.exists():
+                    dest_img.unlink()
+                shutil.move(str(img_file), str(dest_img))
+                break
 
     return sampled
