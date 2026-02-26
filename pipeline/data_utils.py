@@ -229,15 +229,21 @@ def sample_eval_set(
             dest.unlink()
         shutil.move(str(label_file), str(dest))
 
-        # Find and move corresponding image file
+        # Find and move corresponding image file (case-insensitive)
         image_extensions = [".jpg", ".jpeg", ".png", ".bmp"]
+        found = False
         for ext in image_extensions:
-            img_file = verified_dir / f"{label_file.stem}{ext}"
-            if img_file.exists():
-                dest_img = eval_dir / img_file.name
-                if dest_img.exists():
-                    dest_img.unlink()
-                shutil.move(str(img_file), str(dest_img))
+            if found:
                 break
+            # Try both lowercase and uppercase
+            for case_ext in [ext, ext.upper()]:
+                img_file = verified_dir / f"{label_file.stem}{case_ext}"
+                if img_file.exists():
+                    dest_img = eval_dir / img_file.name
+                    if dest_img.exists():
+                        dest_img.unlink()
+                    shutil.move(str(img_file), str(dest_img))
+                    found = True
+                    break
 
     return sampled
