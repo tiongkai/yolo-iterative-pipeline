@@ -48,8 +48,13 @@ class PipelineConfig:
     @classmethod
     def from_yaml(cls, path: str) -> "PipelineConfig":
         """Load configuration from YAML file."""
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Configuration file not found: {path}")
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in {path}: {e}")
         return cls(**data)
 
     def to_yaml(self, path: str):
@@ -81,9 +86,30 @@ class YOLOConfig:
     translate: float = 0.1
     mosaic: float = 1.0
 
+    def __post_init__(self):
+        """Validate YOLO configuration."""
+        if self.epochs <= 0:
+            raise ValueError("epochs must be positive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if self.imgsz < 320:  # YOLO minimum
+            raise ValueError("imgsz must be >= 320")
+        if self.patience < 0:
+            raise ValueError("patience cannot be negative")
+
     @classmethod
     def from_yaml(cls, path: str) -> "YOLOConfig":
         """Load configuration from YAML file."""
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Configuration file not found: {path}")
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in {path}: {e}")
         return cls(**data)
+
+    def to_yaml(self, path: str):
+        """Save configuration to YAML file."""
+        with open(path, "w") as f:
+            yaml.dump(self.__dict__, f, default_flow_style=False)
