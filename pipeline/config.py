@@ -66,7 +66,7 @@ class PipelineConfig:
 @dataclass
 class YOLOConfig:
     """YOLO training configuration."""
-    model: str = "yolo26n.pt"
+    model: str = "yolo11n.pt"  # Will upgrade to yolo26n.pt when available
     epochs: int = 50
     batch_size: int = 16
     imgsz: int = 1280

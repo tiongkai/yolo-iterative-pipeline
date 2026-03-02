@@ -1,4 +1,4 @@
-model: "yolo26n.pt"
+model: "yolo11n.pt"  # Will upgrade to yolo26n.pt when available
 epochs: 50
 batch_size: 16
 imgsz: 1280

@@ -25,7 +25,7 @@ def test_pipeline_config_validation():
 def test_load_yolo_config_from_yaml():
     """Test loading YOLO configuration from YAML."""
     config = YOLOConfig.from_yaml("configs/yolo_config.yaml")
-    assert config.model == "yolo26n.pt"
+    assert config.model == "yolo11n.pt"  # Will upgrade to yolo26n.pt when available
     assert config.imgsz == 1280
     assert config.epochs == 50
 
