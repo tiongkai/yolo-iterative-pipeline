@@ -126,11 +126,8 @@ def train_model(
         train_source = Path("data/sam3_annotations")
         # Copy SAM3 to verified for bootstrap
         verified_dir.mkdir(parents=True, exist_ok=True)
-        for file in train_source.glob("*"):
-            if file.suffix.lower() in {".txt", ".jpg", ".jpeg", ".png", ".bmp"}:
-                dest = verified_dir / file.name
-                if not dest.exists():
-                    shutil.copy(file, dest)
+        for file in train_source.glob("*.txt"):
+            shutil.copy(file, verified_dir / file.name)
     else:
         train_source = verified_dir
 
@@ -291,31 +288,26 @@ def main():
     yolo_config = YOLOConfig.from_yaml(args.yolo_config)
 
     # Train
-    try:
-        version, checkpoint_dir = train_model(pipeline_config, yolo_config, args.bootstrap)
+    version, checkpoint_dir = train_model(pipeline_config, yolo_config, args.bootstrap)
 
-        # Promote if improved
-        promote_model(checkpoint_dir, Path("models/active"))
+    # Promote if improved
+    promote_model(checkpoint_dir, Path("models/active"))
 
-        # Re-score priority queue
-        print("\nRe-scoring priority queue...")
-        from pipeline.active_learning import score_all_images, save_priority_queue
+    # Re-score priority queue
+    print("\nRe-scoring priority queue...")
+    from pipeline.active_learning import score_all_images, save_priority_queue
 
-        model_path = Path("models/active/best.pt")
-        if model_path.exists():
-            scores = score_all_images(
-                working_dir=Path("data/working"),
-                sam3_dir=Path("data/sam3_annotations"),
-                model_path=model_path
-            )
-            save_priority_queue(scores, Path("logs/priority_queue.txt"), version)
-            print("✓ Priority queue updated")
-        else:
-            print("⚠️  Skipping priority queue update (no active model)")
-
-    except Exception as e:
-        print(f"\n✗ Training failed: {e}")
-        raise
+    model_path = Path("models/active/best.pt")
+    if model_path.exists():
+        scores = score_all_images(
+            working_dir=Path("data/working"),
+            sam3_dir=Path("data/sam3_annotations"),
+            model_path=model_path
+        )
+        save_priority_queue(scores, Path("logs/priority_queue.txt"), version)
+        print("✓ Priority queue updated")
+    else:
+        print("⚠️  Skipping priority queue update (no active model)")
 
 
 if __name__ == "__main__":
