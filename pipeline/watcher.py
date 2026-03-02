@@ -8,6 +8,9 @@ from pipeline.config import PipelineConfig, YOLOConfig
 from pipeline.train import train_model, promote_model
 from pipeline.active_learning import score_all_images, save_priority_queue
 
+# Ensure logs directory exists before setting up logging
+Path("logs").mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s: %(message)s',
@@ -122,6 +125,8 @@ class FileWatcher:
             if promoted:
                 # Re-score priority queue
                 logger.info("Re-scoring priority queue...")
+                # TODO: These paths should be configurable via PipelineConfig
+                # Currently hardcoded for consistency with train.py patterns
                 scores = score_all_images(
                     working_dir=Path("data/working"),
                     sam3_dir=Path("data/sam3_annotations"),
