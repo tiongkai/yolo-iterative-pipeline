@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn
 
 from pipeline.metrics import load_training_history
 
