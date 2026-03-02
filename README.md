@@ -59,38 +59,96 @@ data/
 
 **Note:** `sam3_annotations/` contains initial noisy annotations from SAM3. The pipeline will help you clean these.
 
-### 4. Start File Watcher
+### 4. Choose Your Workflow
+
+**See `QUICKSTART.md` for detailed setup instructions.**
+
+#### Option A: Automatic Workflow (Recommended - 4 terminals)
 
 ```bash
+# Terminal 1: Auto-move watcher (working/ → verified/)
+python scripts/auto_move_verified.py
+
+# Terminal 2: Training watcher (verified/ → training)
 yolo-pipeline-watch
+
+# Terminal 3: Status monitor
+watch -n 5 yolo-pipeline-monitor
+
+# Terminal 4: Annotation
+x-anylabeling  # Open Dir: data/working/
 ```
 
-This monitors `data/working/` and auto-moves cleaned annotations to `data/verified/`. Training auto-triggers after N images (default: 50).
+#### Option B: Manual Workflow (3 terminals)
+
+```bash
+# Terminal 1: Training watcher
+yolo-pipeline-watch
+
+# Terminal 2: Annotation
+x-anylabeling  # Open Dir: data/working/
+
+# Terminal 3: Manual move when ready
+./scripts/move_verified.sh
+```
+
+#### Option C: Direct Annotation (2 terminals)
+
+```bash
+# Terminal 1: Training watcher
+yolo-pipeline-watch
+
+# Terminal 2: Annotation
+x-anylabeling  # Open Dir: data/verified/ (save directly)
+```
 
 ### 5. Annotate with X-AnyLabeling
 
-1. Open X-AnyLabeling
-2. Load images from `data/raw/`
-3. Load initial model from `models/checkpoints/` (after first training)
-4. Clean annotations (fix SAM3 boxes)
-5. Save to `data/working/`
+1. Open X-AnyLabeling: `x-anylabeling`
+2. File → Open Dir → `data/working/` (or `data/verified/` for Option C)
+3. Edit → Label Settings → Add your classes
+4. (Optional) AI → Load Model → `models/active/best.pt`
+5. Review and correct annotations
+6. Press `Ctrl+S` to save
 
-The watcher automatically moves verified annotations and triggers training when threshold is met.
+**Workflow:**
+- Option A: Files auto-move from working/ → verified/ after 60s stability
+- Option B: Manually move batches with `./scripts/move_verified.sh`
+- Option C: Save directly to verified/ (no intermediate step)
 
 ## Workflow
 
-### Iteration Cycle
+### Iteration Cycle (Option A: Automatic)
 
 ```
-1. Clean annotations in X-AnyLabeling → save to working/
-2. Watcher auto-moves to verified/ (confidence-based)
-3. After 50 verified images → training auto-triggers
-4. New model saved to models/checkpoints/
-5. Monitor evaluates on eval + test sets
-6. If eval mAP improves → model promoted to models/deployed/
-7. Reload model in X-AnyLabeling
-8. Repeat
+1. Annotate in X-AnyLabeling → saves to data/working/
+   ↓
+2. Auto-move script validates and moves → data/verified/
+   (after 60s file stability, validates YOLO format)
+   ↓
+3. Training watcher counts files → triggers at 50 images
+   (first 3 iterations: 25 images for faster feedback)
+   ↓
+4. Training runs automatically
+   - Samples 15% eval set (stratified by class)
+   - Trains YOLO11n model (~15-20 min on dual A5500)
+   - Evaluates on eval + test sets
+   ↓
+5. Model promotion (only if eval mAP50 improves)
+   - New model → models/active/best.pt
+   - Priority queue re-scored
+   ↓
+6. Reload model in X-AnyLabeling (AI → Load Model)
+   - Better predictions for next batch!
+   ↓
+7. Repeat
 ```
+
+**Key Points:**
+- `yolo-pipeline-watch` monitors `data/verified/` (NOT `data/working/`)
+- `auto_move_verified.py` handles working/ → verified/ movement
+- Training only triggers from verified/ directory
+- Model promoted only if evaluation metrics improve
 
 ### Active Learning Priority
 
@@ -110,6 +168,21 @@ yolo-pipeline-score --top 20
 ```
 
 ## CLI Commands
+
+### Helper Scripts
+
+```bash
+# View setup instructions for 4-terminal workflow
+./scripts/start_pipeline.sh
+
+# Automatic file movement (working/ → verified/)
+python scripts/auto_move_verified.py [--interval 60] [--stability 60]
+
+# Manual batch movement
+./scripts/move_verified.sh              # Interactive mode
+./scripts/move_verified.sh --all        # Move all files
+./scripts/move_verified.sh pattern      # Move files matching pattern
+```
 
 ### Initialize Project
 ```bash

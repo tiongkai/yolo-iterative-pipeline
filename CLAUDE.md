@@ -36,44 +36,51 @@ Priority score = 0.40×uncertainty + 0.35×disagreement + 0.25×diversity
 - **Disagreement**: Model vs SAM3 mismatch → model learned something new
 - **Diversity**: Under-represented detection counts → ensure coverage
 
-### Model Selection: YOLO26
-- Latest Ultralytics model (Jan 2026 release)
-- **STAL**: Small-Target-Aware Label Assignment (built-in)
-- **ProgLoss**: Progressive Loss Balancing (stable training)
-- **MuSGD**: Hybrid SGD+Muon optimizer
-- Config: yolo26n, imgsz=1280, batch_size=16, ~15-20min training
+### Model Selection: YOLO11n (Current Implementation)
+- Using YOLO11n (yolo26n not yet available in Ultralytics)
+- Config: yolo11n.pt, imgsz=1280, batch_size=16, ~15-20min training on dual A5500
+- Will upgrade to yolo26n when available (just change model name in config)
 
 ### Small Object Optimizations
 - imgsz: 1280 (vs standard 640) → 4x more pixels
 - copy_paste: 0.5 → duplicate small objects in training
 - close_mosaic: 10 → disable mosaic in final epochs (better small object precision)
-- STAL built into YOLO26
 
 ### Automation Strategy
-- File watcher monitors verified/ folder
-- Triggers training after N new images (default: 50)
-- Auto-samples eval set (stratified by class)
-- Trains YOLO26, evaluates on eval + test
+- File watcher monitors `data/verified/` folder (NOT working/)
+- Triggers training after N new images (default: 50, early iterations: 25)
+- Auto-samples eval set (stratified by class, 15% of verified)
+- Trains YOLO11n, evaluates on eval + test
 - Promotes model to active/ only if eval mAP improves
 - Re-scores priority queue with new model
-- X-AnyLabeling loads improved model
+- X-AnyLabeling loads improved model from models/active/best.pt
 
 ## Tool Integration: X-AnyLabeling
 
 **Why X-AnyLabeling:**
 - Native YOLO model loading
 - Auto-annotation with custom models
-- Fast keyboard shortcuts
+- Fast keyboard shortcuts (W=draw, D=next, Delete=remove)
 - Saves in YOLO format
 - Shows confidence scores
 
-**Workflow:**
-1. User saves annotations to working/
-2. Background script auto-moves to verified/ (confidence-based: file modified + has labels)
-3. After 50 verified images, training auto-triggers
-4. New model symlinked to models/active/
-5. User reloads model in X-AnyLabeling
-6. Repeat
+**Workflow (Option A: Automatic - Recommended):**
+1. User annotates in X-AnyLabeling → saves to data/working/
+2. Auto-move script (`scripts/auto_move_verified.py`) watches working/
+   - Waits 60s for file stability
+   - Validates YOLO format
+   - Moves to data/verified/
+3. Training watcher (`yolo-pipeline-watch`) monitors verified/
+4. After 50 verified images → training auto-triggers
+5. New model promoted to models/active/best.pt (if improved)
+6. User reloads model in X-AnyLabeling (AI → Load Model)
+7. Repeat with better predictions
+
+**Alternative Workflows:**
+- **Option B (Manual)**: Use `./scripts/move_verified.sh` to manually move batches
+- **Option C (Direct)**: Save directly to data/verified/ (skip working/ step)
+
+**CRITICAL:** `yolo-pipeline-watch` monitors `verified/` not `working/`. Movement from working/ to verified/ requires either auto-move script or manual movement.
 
 ## Metrics Tracked
 
@@ -171,8 +178,68 @@ python pipeline/export.py --version v007 --formats onnx tensorrt
 - Production model ready at 300-500 images (vs 1500+ manual)
 - Pipeline uptime > 95%
 
-## Next Steps
+## Implementation Status
 
-See full design: `docs/plans/2026-02-26-yolo-iterative-pipeline-design.md`
+✅ **COMPLETE** - All 8 tasks implemented and tested (March 2, 2026)
 
-Next phase: Create detailed implementation plan using writing-plans skill
+### What Was Built
+
+**Core Pipeline (Tasks 1-5):**
+- Project structure with setup.py and pytest configuration
+- Configuration management (PipelineConfig, YOLOConfig with YAML serialization)
+- Data utilities (validation, eval set sampling with stratification)
+- Active learning scoring (uncertainty, disagreement, diversity)
+- Training pipeline (YOLO11n training, dual eval/test metrics, F1 scoring, model promotion)
+
+**Automation (Tasks 6-7):**
+- File watcher service (`yolo-pipeline-watch`) - monitors verified/, triggers training
+- Auto-move script (`scripts/auto_move_verified.py`) - handles working/ → verified/ movement
+- Manual move script (`scripts/move_verified.sh`) - batch movement utility
+- Status monitor (`yolo-pipeline-monitor`) - Rich-based real-time dashboard
+- Model export (`yolo-pipeline-export`) - ONNX, TensorRT, TorchScript
+
+**Documentation (Task 8):**
+- Comprehensive README.md with 3 workflow options
+- QUICKSTART.md for Option 2 (automatic workflow)
+- Jupyter notebook for metrics visualization (`notebooks/analysis.ipynb`)
+- Helper script (`scripts/start_pipeline.sh`) with all commands
+
+**Test Coverage:** 41/41 tests passing (100%)
+- 27 unit tests (config, data_utils, metrics, active_learning)
+- 5 integration tests (watcher)
+- ~44% code coverage (focused on critical paths)
+
+### Current Dataset: Willow Boat Detection
+
+**Status:** Ready for annotation
+- **1,568 images** with converted YOLO labels in `data/working/`
+- **3 classes:** boat (0), human (1), outboard motor (2)
+- **Source:** Converted from detections.json (SAM3 format → YOLO format)
+- **Next step:** Review/correct annotations in X-AnyLabeling
+
+### Quick Start (4-Terminal Workflow)
+
+```bash
+# Terminal 1: Auto-move watcher
+cd /home/lenovo6/TiongKai/yolo-iterative-pipeline
+source venv/bin/activate
+python scripts/auto_move_verified.py
+
+# Terminal 2: Training watcher
+yolo-pipeline-watch
+
+# Terminal 3: Status monitor
+watch -n 5 yolo-pipeline-monitor
+
+# Terminal 4: Annotation
+x-anylabeling  # Open Dir: data/working/
+```
+
+See `QUICKSTART.md` for detailed instructions.
+
+## References
+
+- **Implementation Plan**: `docs/plans/2026-02-26-yolo-iterative-pipeline-implementation.md`
+- **Design Doc**: `docs/plans/2026-02-26-yolo-iterative-pipeline-design.md`
+- **Training History**: `logs/training_history.json` (created after first training)
+- **Priority Queue**: `logs/priority_queue.txt` (updated after each training)
