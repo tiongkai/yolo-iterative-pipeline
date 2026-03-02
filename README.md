@@ -1,3 +1,525 @@
 # YOLO Iterative Training Pipeline
 
-(Documentation will be added in Task 8)
+Active learning pipeline for iterative YOLO training that turns annotation into continuous model improvement. Dual-purpose system: assists annotation while producing production-ready detection models.
+
+## Features
+
+- **Active Learning**: Automatically selects most valuable images to annotate next
+- **Iterative Training**: Trains YOLO models as you annotate (auto-triggers after N images)
+- **Dual Metrics**: Eval set (in-distribution) + Test set (generalization)
+- **X-AnyLabeling Integration**: Load improved models directly into annotation tool
+- **Small Object Optimizations**: High-resolution training (1280px) with copy-paste augmentation
+- **Multi-GPU Support**: Leverages dual GPUs for faster training
+- **Production Ready**: Export models in ONNX, TensorRT formats
+
+## Quick Start
+
+### 1. Installation
+
+```bash
+git clone <repository-url>
+cd yolo-iterative-pipeline
+pip install -e .
+```
+
+**Requirements:**
+- Python 3.8+
+- CUDA-capable GPU(s)
+- ultralytics >= 8.3.0
+- torch >= 2.0.0
+
+### 2. Initialize Project
+
+```bash
+yolo-pipeline-init --project-name my_project --classes person car bicycle
+```
+
+This creates:
+- `configs/pipeline_config.yaml` - Pipeline settings
+- `configs/yolo_config.yaml` - YOLO training hyperparameters
+- `data/` directories (raw, verified, eval, test, working, sam3_annotations)
+- `models/` directories (checkpoints, deployed)
+- `logs/` directory
+
+### 3. Prepare Data
+
+Place your data in the following structure:
+
+```
+data/
+├── raw/                    # Original images
+│   └── image001.jpg
+├── sam3_annotations/       # SAM3 bounding boxes (YOLO format, noisy)
+│   ├── image001.txt
+│   └── classes.txt
+└── test/                   # Pre-existing labeled data (fixed test set)
+    ├── images/
+    └── labels/
+```
+
+**Note:** `sam3_annotations/` contains initial noisy annotations from SAM3. The pipeline will help you clean these.
+
+### 4. Start File Watcher
+
+```bash
+yolo-pipeline-watch
+```
+
+This monitors `data/working/` and auto-moves cleaned annotations to `data/verified/`. Training auto-triggers after N images (default: 50).
+
+### 5. Annotate with X-AnyLabeling
+
+1. Open X-AnyLabeling
+2. Load images from `data/raw/`
+3. Load initial model from `models/checkpoints/` (after first training)
+4. Clean annotations (fix SAM3 boxes)
+5. Save to `data/working/`
+
+The watcher automatically moves verified annotations and triggers training when threshold is met.
+
+## Workflow
+
+### Iteration Cycle
+
+```
+1. Clean annotations in X-AnyLabeling → save to working/
+2. Watcher auto-moves to verified/ (confidence-based)
+3. After 50 verified images → training auto-triggers
+4. New model saved to models/checkpoints/
+5. Monitor evaluates on eval + test sets
+6. If eval mAP improves → model promoted to models/deployed/
+7. Reload model in X-AnyLabeling
+8. Repeat
+```
+
+### Active Learning Priority
+
+The pipeline automatically scores remaining raw images by:
+
+```
+Priority = 0.40×uncertainty + 0.35×disagreement + 0.25×diversity
+```
+
+- **Uncertainty**: Low model confidence → needs more examples
+- **Disagreement**: Model vs SAM3 mismatch → model learned something new
+- **Diversity**: Under-represented detection counts → ensure coverage
+
+View priorities with:
+```bash
+yolo-pipeline-score --top 20
+```
+
+## CLI Commands
+
+### Initialize Project
+```bash
+yolo-pipeline-init --project-name <name> --classes <class1> <class2> ...
+```
+
+### Start File Watcher
+```bash
+yolo-pipeline-watch [--config configs/pipeline_config.yaml]
+```
+
+Monitors `data/working/` and auto-triggers training.
+
+### Manual Training
+```bash
+yolo-pipeline-train [--config configs/yolo_config.yaml]
+```
+
+Trains YOLO model on current `data/verified/` set.
+
+### Monitor Status
+```bash
+yolo-pipeline-monitor [--watch]
+```
+
+Shows:
+- Current iteration
+- Image counts (verified, eval, test)
+- Latest model metrics (mAP50, F1, precision, recall)
+- Training history
+
+Add `--watch` for real-time updates.
+
+### Score & Prioritize
+```bash
+yolo-pipeline-score [--top N] [--rescore]
+```
+
+- `--top N`: Show top N priority images
+- `--rescore`: Re-calculate priorities with latest model
+
+### Export Models
+```bash
+yolo-pipeline-export --version v007 --formats onnx tensorrt
+```
+
+Exports trained model to production formats.
+
+## Directory Structure
+
+```
+yolo-iterative-pipeline/
+├── configs/
+│   ├── pipeline_config.yaml    # Pipeline settings
+│   └── yolo_config.yaml         # YOLO hyperparameters
+├── data/
+│   ├── raw/                     # Original images
+│   ├── sam3_annotations/        # SAM3 boxes (noisy)
+│   ├── working/                 # X-AnyLabeling workspace
+│   ├── verified/                # Human-verified annotations
+│   ├── eval/                    # Auto-sampled 10-15% from verified
+│   └── test/                    # Pre-existing labeled data (fixed)
+├── models/
+│   ├── checkpoints/             # Training checkpoints
+│   └── deployed/                # Production-ready models
+├── logs/
+│   ├── training.log             # Training logs
+│   ├── watcher.log              # File watcher logs
+│   └── training_history.json    # Metrics over time
+├── notebooks/
+│   └── analysis.ipynb           # Metrics visualization
+└── pipeline/                    # Source code
+```
+
+## Configuration
+
+### Pipeline Config (`configs/pipeline_config.yaml`)
+
+```yaml
+project_name: "my_project"
+classes:
+  - "person"
+  - "car"
+  - "bicycle"
+
+# Trigger settings
+trigger_threshold: 50        # Train after N new verified images
+early_trigger: 25            # Use lower threshold early on
+min_train_images: 50         # Minimum images to start training
+
+# Data splits
+eval_split_ratio: 0.15       # 15% of verified → eval set
+stratify: true               # Balance classes in eval split
+
+# Active learning weights (must sum to 1.0)
+uncertainty_weight: 0.40
+disagreement_weight: 0.35
+diversity_weight: 0.25
+
+# Notifications
+desktop_notify: true         # Desktop notifications (Linux only)
+slack_webhook: null          # Optional Slack webhook URL
+
+# Cleanup
+keep_last_n_checkpoints: 10  # Keep only last N checkpoints
+```
+
+### YOLO Config (`configs/yolo_config.yaml`)
+
+```yaml
+model: "yolo11n.pt"          # Base model
+epochs: 50
+batch_size: 16
+imgsz: 1280                  # High-res for small objects
+device: [0, 1]               # Multi-GPU training
+patience: 10                 # Early stopping patience
+
+# Small object optimizations
+close_mosaic: 10             # Disable mosaic in final 10 epochs
+copy_paste: 0.5              # Duplicate small objects (50% chance)
+mixup: 0.1
+
+# Standard augmentation
+scale: 0.9
+fliplr: 0.5
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 0.0
+translate: 0.1
+mosaic: 1.0
+```
+
+## Expected Performance
+
+| Iteration | Verified Images | Eval mAP50 | Test mAP50 | Status |
+|-----------|----------------|------------|------------|--------|
+| 1-2       | 100-200        | 0.75-0.82  | 0.70-0.78  | Model becomes useful |
+| 3-5       | 300-500        | 0.82-0.88  | 0.78-0.85  | Production-ready with oversight |
+| 6+        | 700+           | 0.88-0.93  | 0.85-0.90  | Autonomous deployment |
+
+**Training Time:** ~15-20 minutes per iteration (dual A5500 GPUs, 1280px images)
+
+## Advanced Usage
+
+### Bootstrap Training
+
+**Option 1: Train on noisy SAM3 annotations first**
+```bash
+# Copy SAM3 annotations to verified/
+cp data/sam3_annotations/*.txt data/verified/labels/
+cp data/raw/*.jpg data/verified/images/
+
+# Trigger training
+yolo-pipeline-train
+```
+
+**Option 2: Manually clean 50-100 images first** (recommended)
+```bash
+# Clean annotations in X-AnyLabeling, save to working/
+# Watcher auto-moves to verified/
+# Training auto-triggers at 50 images
+```
+
+### Adjust Trigger Threshold
+
+Early iterations benefit from faster feedback:
+
+```yaml
+# configs/pipeline_config.yaml
+early_trigger: 25      # First 2-3 iterations
+trigger_threshold: 50  # Mid iterations
+# Late iterations: increase to 100 (diminishing returns)
+```
+
+### Custom Active Learning Weights
+
+Adjust if specific signal more important:
+
+```yaml
+# Increase uncertainty if model very uncertain
+uncertainty_weight: 0.50
+disagreement_weight: 0.30
+diversity_weight: 0.20
+
+# Increase disagreement if SAM3 systematically wrong
+uncertainty_weight: 0.30
+disagreement_weight: 0.50
+diversity_weight: 0.20
+
+# Increase diversity if dataset very imbalanced
+uncertainty_weight: 0.30
+disagreement_weight: 0.30
+diversity_weight: 0.40
+```
+
+### Production Deployment
+
+Models can be deployed during annotation (not just at end):
+
+- **After iteration 2-3**: Good enough for screening, low-stakes detection
+- **After iteration 4-5**: Production with human oversight
+- **After iteration 7+**: Autonomous deployment
+
+```bash
+# Export to ONNX
+yolo-pipeline-export --version v005 --formats onnx
+
+# Export to TensorRT (optimized for A5500)
+yolo-pipeline-export --version v005 --formats tensorrt
+```
+
+### Health Check
+
+```bash
+yolo-pipeline-monitor --health-check
+```
+
+Checks:
+- Configuration validity
+- Directory structure
+- Training lock status
+- Latest model metrics
+- Data distribution
+
+## Troubleshooting
+
+### Training Fails with OOM Error
+
+**Problem:** GPU out of memory
+
+**Solution 1:** Reduce batch size
+```yaml
+# configs/yolo_config.yaml
+batch_size: 8  # or 4
+```
+
+**Solution 2:** Reduce image size
+```yaml
+# configs/yolo_config.yaml
+imgsz: 640  # from 1280
+```
+
+The pipeline auto-retries with `batch_size/2` on OOM.
+
+### Watcher Not Triggering Training
+
+**Problem:** Verified images not triggering training
+
+**Check 1:** Verify threshold
+```bash
+# How many verified images?
+ls data/verified/images/*.jpg | wc -l
+
+# Check threshold
+grep trigger_threshold configs/pipeline_config.yaml
+```
+
+**Check 2:** Training lock
+```bash
+# Remove stale lock if training crashed
+rm logs/.training.lock
+```
+
+**Check 3:** Watcher logs
+```bash
+tail -f logs/watcher.log
+```
+
+### Model Not Improving
+
+**Problem:** Eval mAP plateauing or decreasing
+
+**Cause 1:** Not enough diversity
+```bash
+# Check active learning priorities
+yolo-pipeline-score --top 50
+
+# Focus on high-priority images
+```
+
+**Cause 2:** Annotation quality issues
+```bash
+# Review recent annotations
+ls -lt data/verified/labels/*.txt | head -20
+```
+
+**Cause 3:** Overfitting
+```yaml
+# Increase eval split
+eval_split_ratio: 0.20  # from 0.15
+```
+
+### Corrupted Annotations
+
+**Problem:** Training crashes with invalid annotations
+
+**Solution:** The pipeline automatically skips corrupted files and logs them:
+```bash
+grep "Skipping invalid" logs/training.log
+```
+
+Remove or fix corrupted annotations:
+```bash
+# Find empty label files
+find data/verified/labels -name "*.txt" -empty
+
+# Find labels with invalid class IDs
+grep -r "^[3-9]" data/verified/labels/  # if only 3 classes (0,1,2)
+```
+
+### X-AnyLabeling Not Loading Model
+
+**Problem:** Cannot load trained model in X-AnyLabeling
+
+**Solution:** X-AnyLabeling requires `.pt` format:
+```bash
+# Models are already in .pt format in models/checkpoints/
+ls models/checkpoints/*.pt
+
+# Load best.pt or latest.pt
+```
+
+If model still fails:
+```bash
+# Export to ONNX and load that
+yolo-pipeline-export --version v003 --formats onnx
+# Load models/deployed/v003.onnx in X-AnyLabeling
+```
+
+## Metrics Tracked
+
+**Per Model:**
+- mAP@0.5, mAP@0.5:0.95
+- Precision, Recall, F1 Score
+- Both eval and test sets
+- Per-class breakdown
+
+**Training History:**
+- Version, timestamp, image counts
+- Metrics progression over iterations
+- Improvement over previous model
+- Training time
+
+View in Jupyter notebook:
+```bash
+jupyter notebook notebooks/analysis.ipynb
+```
+
+## Success Criteria
+
+**Technical:**
+- Eval mAP50 > 0.85, F1 > 0.80
+- Test mAP50 > 0.82, F1 > 0.77
+- Per-class recall > 0.75
+
+**Operational:**
+- 30-50% reduction in annotation time vs manual
+- Production model ready at 300-500 images (vs 1500+ manual)
+- Pipeline uptime > 95%
+
+## Citation
+
+If you use this pipeline in your research, please cite:
+
+```bibtex
+@software{yolo_iterative_pipeline,
+  title = {YOLO Iterative Training Pipeline},
+  author = {Your Name},
+  year = {2026},
+  url = {https://github.com/yourusername/yolo-iterative-pipeline}
+}
+```
+
+## License
+
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Support
+
+For issues and questions:
+- GitHub Issues: [repository-url]/issues
+- Documentation: `docs/plans/`
+- Email: your.email@example.com
+
+---
+
+**Hardware Used:** 2x NVIDIA A5500 GPUs (excellent for fast iteration)
+
+**Related Tools:**
+- [X-AnyLabeling](https://github.com/CVHub520/X-AnyLabeling) - Annotation tool with YOLO model loading
+- [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) - YOLO11 detection framework
+- [SAM](https://github.com/facebookresearch/segment-anything) - Segment Anything Model

@@ -1,3 +1,29 @@
+# Data
+data9/
+processed_data/
+
+# Data directories (keep structure, ignore content)
+data/raw/*
+!data/raw/.gitkeep
+data/verified/*
+!data/verified/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
+data/working/*
+!data/working/.gitkeep
+data/sam3_annotations/*
+!data/sam3_annotations/.gitkeep
+
+# Model checkpoints (large files)
+models/checkpoints/*
+!models/checkpoints/.gitkeep
+models/deployed/*
+!models/deployed/.gitkeep
+
+# Logs
+logs/*.log
+logs/.training.lock
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -77,6 +103,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+notebooks/.ipynb_checkpoints/
 
 # IPython
 profile_default/
