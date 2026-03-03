@@ -9,7 +9,7 @@ from ultralytics import YOLO
 import yaml
 
 from pipeline.config import PipelineConfig, YOLOConfig
-from pipeline.data_utils import get_image_label_pairs, sample_eval_set
+from pipeline.data_utils import get_image_label_pairs, sample_eval_set, generate_manifests
 from pipeline.metrics import (
     calculate_f1_score,
     format_metrics,
@@ -71,26 +71,28 @@ def init_model(
 
 
 def create_data_yaml(
-    train_dir: Path,
-    eval_dir: Path,
+    train_manifest: Path,
+    eval_manifest: Path,
     test_dir: Path,
     classes: list,
-    output_path: Path
+    output_path: Path,
+    root_dir: Path
 ):
     """Create data.yaml for YOLO training.
 
     Args:
-        train_dir: Training data directory
-        eval_dir: Evaluation data directory
-        test_dir: Test data directory
+        train_manifest: Path to train.txt manifest file
+        eval_manifest: Path to eval.txt manifest file
+        test_dir: Test data directory (still uses directory structure)
         classes: List of class names
         output_path: Where to save data.yaml
+        root_dir: Root directory for the project (to make relative paths)
     """
     data = {
-        "path": str(Path.cwd()),
-        "train": str(train_dir.relative_to(Path.cwd())),
-        "val": str(eval_dir.relative_to(Path.cwd())),
-        "test": str(test_dir.relative_to(Path.cwd())),
+        "path": str(root_dir),
+        "train": str(train_manifest.relative_to(root_dir)),
+        "val": str(eval_manifest.relative_to(root_dir)),
+        "test": str(test_dir.relative_to(root_dir)),
         "names": {i: name for i, name in enumerate(classes)}
     }
 
@@ -169,24 +171,18 @@ def train_model(
     """
     start_time = time.time()
 
-    # Setup paths
-    verified_dir = Path("data/verified")
-    eval_dir = Path("data/eval")
-    test_dir = Path("data/test")
-    data_yaml = Path("data/data.yaml")
-    log_path = Path("logs/training_history.json")
+    # Setup paths using PathManager
+    data_yaml = paths.data_yaml()
+    log_path = paths.training_history()
 
     # Determine source for training
     if bootstrap:
         print("Bootstrap mode: training on SAM3 annotations")
         print("NOTE: Bootstrap not recommended - manually verify data instead")
         print("Skipping bootstrap - requires manual setup of verified/ directory")
-        train_source = verified_dir
-    else:
-        train_source = verified_dir
 
     # Check minimum images (expects verified/labels/*.txt structure)
-    labels_dir = verified_dir / 'labels'
+    labels_dir = paths.verified_labels()
     if not labels_dir.exists():
         raise ValueError(f"Labels directory not found: {labels_dir}")
 
@@ -197,28 +193,24 @@ def train_model(
             f"found {len(train_files)}"
         )
 
-    # Sample eval set if enough images
-    if len(train_files) >= 100 and not bootstrap:
-        print(f"Sampling eval set ({pipeline_config.eval_split_ratio * 100:.0f}%)...")
-        sample_eval_set(
-            verified_dir=verified_dir,
-            eval_dir=eval_dir,
-            split_ratio=pipeline_config.eval_split_ratio,
-            stratify=pipeline_config.stratify,
-            num_classes=len(pipeline_config.classes)
-        )
-        val_dir = eval_dir
-    else:
-        val_dir = verified_dir
-        print(f"Using all {len(train_files)} images for training (eval set not sampled)")
+    # Generate manifests (replaces eval set sampling)
+    print(f"Generating train/eval manifests ({pipeline_config.eval_split_ratio * 100:.0f}% eval)...")
+    train_count, eval_count = generate_manifests(
+        paths=paths,
+        config=pipeline_config,
+        random_seed=42
+    )
+    print(f"  Train: {train_count} images")
+    print(f"  Eval: {eval_count} images")
 
     # Create data.yaml
     create_data_yaml(
-        train_dir=verified_dir,
-        eval_dir=val_dir,
-        test_dir=test_dir,
+        train_manifest=paths.train_manifest(),
+        eval_manifest=paths.eval_manifest(),
+        test_dir=paths.test_dir(),
         classes=pipeline_config.classes,
-        output_path=data_yaml
+        output_path=data_yaml,
+        root_dir=paths.root_dir
     )
 
     # Initialize model (with smart resume)
@@ -229,7 +221,7 @@ def train_model(
     run_name = f"model_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # Train
-    print(f"Training on {len(train_files)} images...")
+    print(f"Training on {train_count} images...")
     results = model.train(
         data=str(data_yaml),
         epochs=yolo_config.epochs,
@@ -248,7 +240,7 @@ def train_model(
         degrees=yolo_config.degrees,
         translate=yolo_config.translate,
         mosaic=yolo_config.mosaic,
-        project="models/checkpoints",
+        project=str(paths.checkpoint_dir()),
         name=run_name,
         exist_ok=True,
     )
@@ -266,7 +258,7 @@ def train_model(
     append_training_history(
         log_path=log_path,
         version=version,
-        train_images=len(train_files),
+        train_images=train_count,
         eval_metrics=eval_metrics,
         test_metrics=test_metrics,
         training_time_minutes=training_time,
@@ -283,17 +275,22 @@ def train_model(
     return version, checkpoint_dir
 
 
-def promote_model(checkpoint_dir: Path, active_dir: Path) -> bool:
+def promote_model(
+    checkpoint_dir: Path,
+    active_dir: Path,
+    paths: 'PathManager'
+) -> bool:
     """Promote model to active if it improved.
 
     Args:
         checkpoint_dir: Directory with new checkpoint
         active_dir: Active model directory
+        paths: PathManager instance
 
     Returns:
         True if promoted, False otherwise
     """
-    log_path = Path("logs/training_history.json")
+    log_path = paths.training_history()
     history = load_training_history(log_path)
 
     if len(history) < 2:
@@ -360,20 +357,20 @@ def main():
     )
 
     # Promote if improved
-    promote_model(checkpoint_dir, Path("models/active"))
+    promote_model(checkpoint_dir, paths.active_model().parent, paths)
 
     # Re-score priority queue
     print("\nRe-scoring priority queue...")
     from pipeline.active_learning import score_all_images, save_priority_queue
 
-    model_path = Path("models/active/best.pt")
+    model_path = paths.active_model()
     if model_path.exists():
         scores = score_all_images(
-            working_dir=Path("data/working"),
-            sam3_dir=Path("data/sam3_annotations"),
+            working_dir=paths.working_dir(),
+            sam3_dir=Path("data/sam3_annotations"),  # Not in PathManager yet
             model_path=model_path
         )
-        save_priority_queue(scores, Path("logs/priority_queue.txt"), version)
+        save_priority_queue(scores, paths.priority_queue(), version)
         print("✓ Priority queue updated")
     else:
         print("⚠️  Skipping priority queue update (no active model)")
