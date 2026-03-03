@@ -15,6 +15,7 @@ Usage:
 import time
 import shutil
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
 import logging
@@ -97,6 +98,100 @@ def find_image_for_label(label_path: Path) -> Path:
     return None
 
 
+def atomic_move_pair(
+    label_src: Path,
+    image_src: Path,
+    label_dst: Path,
+    image_dst: Path
+) -> bool:
+    """Atomically move label and image pair using copy-then-rename.
+
+    Steps:
+    1. Copy both files with .tmp extension
+    2. Verify both copies exist
+    3. Rename atomically (os.rename is atomic on POSIX)
+    4. Delete originals only after both renames succeed
+
+    If any step fails, rolls back any partial operations.
+
+    Args:
+        label_src: Source label file path
+        image_src: Source image file path
+        label_dst: Destination label file path
+        image_dst: Destination image file path
+
+    Returns:
+        True if successful, False if failed
+    """
+    label_tmp = label_dst.parent / f"{label_dst.name}.tmp"
+    image_tmp = image_dst.parent / f"{image_dst.name}.tmp"
+
+    try:
+        # Step 1: Copy both files with .tmp extension
+        shutil.copy2(str(label_src), str(label_tmp))
+        shutil.copy2(str(image_src), str(image_tmp))
+
+        # Step 2: Verify both copies exist
+        if not label_tmp.exists() or not image_tmp.exists():
+            raise IOError("Copy verification failed")
+
+        # Step 3: Rename atomically (atomic on POSIX systems)
+        os.rename(str(label_tmp), str(label_dst))
+        os.rename(str(image_tmp), str(image_dst))
+
+        # Step 4: Delete originals only after both renames succeed
+        label_src.unlink()
+        image_src.unlink()
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Atomic move failed: {e}")
+
+        # Rollback: remove any .tmp files created
+        if label_tmp.exists():
+            label_tmp.unlink()
+        if image_tmp.exists():
+            image_tmp.unlink()
+
+        # Rollback: remove any partial destination files
+        if label_dst.exists():
+            label_dst.unlink()
+        if image_dst.exists():
+            image_dst.unlink()
+
+        return False
+
+
+def cleanup_tmp_files(verified_dir: Path) -> int:
+    """Remove stale .tmp files from verified directory.
+
+    Should be called on startup to clean up after crashes.
+
+    Args:
+        verified_dir: Verified directory (data/verified/)
+
+    Returns:
+        Number of files removed
+    """
+    count = 0
+
+    for subdir in ['labels', 'images']:
+        dir_path = verified_dir / subdir
+        if not dir_path.exists():
+            continue
+
+        for tmp_file in dir_path.glob("*.tmp"):
+            try:
+                tmp_file.unlink()
+                count += 1
+                logger.info(f"Removed stale temp file: {tmp_file.name}")
+            except Exception as e:
+                logger.warning(f"Failed to remove {tmp_file.name}: {e}")
+
+    return count
+
+
 def move_verified_file(label_path: Path, verified_dir: Path, tracker: VerificationTracker = None) -> bool:
     """
     Move label and corresponding image to verified directory.
@@ -123,9 +218,17 @@ def move_verified_file(label_path: Path, verified_dir: Path, tracker: Verificati
         verified_labels_dir.mkdir(parents=True, exist_ok=True)
         verified_images_dir.mkdir(parents=True, exist_ok=True)
 
-        # Move both files to respective subdirectories
-        shutil.move(str(label_path), str(verified_labels_dir / label_path.name))
-        shutil.move(str(img_path), str(verified_images_dir / img_path.name))
+        # Atomically move both files
+        success = atomic_move_pair(
+            label_path,
+            img_path,
+            verified_labels_dir / label_path.name,
+            verified_images_dir / img_path.name
+        )
+
+        if not success:
+            logger.error(f"Failed to move {label_path.name}")
+            return False
 
         # Log as verified in tracker
         if tracker:
@@ -169,6 +272,11 @@ def auto_move_loop(
     """
     # Initialize verification tracker
     tracker = VerificationTracker()
+
+    # Clean up stale .tmp files from previous crashes
+    tmp_count = cleanup_tmp_files(verified_dir)
+    if tmp_count > 0:
+        logger.info(f"Cleaned up {tmp_count} stale temp files")
 
     # Record start time - only files modified after this will be moved
     script_start_time = time.time()
