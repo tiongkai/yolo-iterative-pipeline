@@ -5,6 +5,7 @@ import signal
 import subprocess
 import time
 import logging
+import argparse
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -188,3 +189,95 @@ class ProcessManager:
             logger.error(f"Error running pipeline: {e}")
             self.stop_all()
             raise
+
+
+def main() -> None:
+    """CLI entry point for yolo-pipeline-run command.
+
+    Starts all pipeline services with a single command:
+    - Health check (optional via --no-doctor)
+    - Auto-move service (optional via --no-auto-move)
+    - Training watcher
+    - Status monitor
+
+    Handles graceful shutdown on Ctrl+C.
+    """
+    parser = argparse.ArgumentParser(
+        description="Run all YOLO pipeline services",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Start all services with health check
+  yolo-pipeline-run
+
+  # Skip health check (faster startup)
+  yolo-pipeline-run --no-doctor
+
+  # Manual workflow (no auto-move)
+  yolo-pipeline-run --no-auto-move
+
+  # Enable debug logging
+  yolo-pipeline-run --debug
+        """
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
+
+    parser.add_argument(
+        "--no-doctor",
+        action="store_true",
+        help="Skip health check (faster startup, use with caution)"
+    )
+
+    parser.add_argument(
+        "--no-auto-move",
+        action="store_true",
+        help="Skip auto-move service (for manual workflow)"
+    )
+
+    args = parser.parse_args()
+
+    try:
+        # Load configuration
+        config_path = Path.cwd() / "configs" / "pipeline_config.yaml"
+
+        if not config_path.exists():
+            logger.error("❌ Error: configs/pipeline_config.yaml not found")
+            logger.error("   Run this command from your project root directory")
+            sys.exit(1)
+
+        config = PipelineConfig.from_yaml(config_path)
+
+        # Create PathManager and ProcessManager
+        paths = PathManager(Path.cwd(), config)
+        process_manager = ProcessManager(paths, config)
+
+        # Set debug logging if requested
+        if args.debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+            logger.debug("Debug logging enabled")
+
+        # Run all services
+        process_manager.run(
+            debug=args.debug,
+            no_doctor=args.no_doctor,
+            no_auto_move=args.no_auto_move
+        )
+
+    except KeyboardInterrupt:
+        logger.info("\nShutdown complete")
+        sys.exit(0)
+
+    except Exception as e:
+        logger.error(f"❌ Error starting pipeline: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

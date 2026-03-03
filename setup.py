@@ -20,6 +20,7 @@ setup(
             "yolo-pipeline-score=pipeline.active_learning:main",
             "yolo-pipeline-export=pipeline.export:main",
             "yolo-pipeline-doctor=pipeline.doctor:main",
+            "yolo-pipeline-run=pipeline.process_manager:main",
         ],
     },
     python_requires=">=3.8",
