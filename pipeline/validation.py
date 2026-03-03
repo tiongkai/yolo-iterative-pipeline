@@ -75,3 +75,98 @@ class HealthReport:
             True if overall_status is "healthy" or "warnings"
         """
         return self.overall_status in ["healthy", "warnings"]
+
+
+class PipelineValidator:
+    """Validate pipeline setup and state.
+
+    Provides comprehensive validation of directory structure, configuration,
+    annotations, and models. Used by doctor command and components at startup.
+    """
+
+    def __init__(self, paths):
+        """Initialize validator.
+
+        Args:
+            paths: PathManager instance for accessing pipeline paths
+        """
+        self.paths = paths
+
+    def validate_structure(self) -> ValidationResult:
+        """Check all required directories exist with correct layout.
+
+        Validates:
+        - All data directories exist (working, verified, eval, test)
+        - Each has images/ and labels/ subdirectories
+        - No orphaned files in parent directories
+        - Models and logs directories exist
+
+        Returns:
+            ValidationResult with status and messages
+        """
+        messages = []
+        errors = []
+        warnings = []
+        details = {}
+
+        # Check required data directories with subdirs
+        required_dirs = [
+            (self.paths.working_images(), "data/working/images/"),
+            (self.paths.working_labels(), "data/working/labels/"),
+            (self.paths.verified_images(), "data/verified/images/"),
+            (self.paths.verified_labels(), "data/verified/labels/"),
+            (self.paths.eval_images(), "data/eval/images/"),
+            (self.paths.eval_labels(), "data/eval/labels/"),
+            (self.paths.test_images(), "data/test/images/"),
+            (self.paths.test_labels(), "data/test/labels/"),
+            (self.paths.splits_dir(), "data/splits/"),
+            (self.paths.checkpoint_dir(), "models/checkpoints/"),
+            (self.paths.logs_dir(), "logs/"),
+        ]
+
+        for dir_path, display_name in required_dirs:
+            if not dir_path.exists():
+                errors.append(f"✗ Missing required directory: {display_name}")
+            else:
+                messages.append(f"✓ {display_name} exists")
+
+        # Check for orphaned files in parent directories
+        data_parents = [
+            self.paths.working_dir(),
+            self.paths.verified_dir(),
+            self.paths.eval_dir(),
+            self.paths.test_dir(),
+        ]
+
+        orphaned_files = []
+        for parent_dir in data_parents:
+            if parent_dir.exists():
+                # Look for .txt or image files in parent (should be in subdirs)
+                for pattern in ["*.txt", "*.png", "*.jpg", "*.jpeg"]:
+                    files = list(parent_dir.glob(pattern))
+                    if files:
+                        orphaned_files.extend(files)
+                        warnings.append(
+                            f"⚠ Found {len(files)} orphaned files in {parent_dir.relative_to(self.paths.root_dir)}"
+                        )
+
+        if orphaned_files:
+            details["orphaned_files"] = [str(f) for f in orphaned_files]
+            warnings.append("→ Move files into images/ and labels/ subdirectories")
+
+        # Determine overall status
+        if errors:
+            status = "error"
+            messages = errors + warnings
+        elif warnings:
+            status = "warning"
+            messages = messages + warnings
+        else:
+            status = "pass"
+            messages.append("All required directories exist with correct layout")
+
+        return ValidationResult(
+            status=status,
+            messages=messages,
+            details=details
+        )

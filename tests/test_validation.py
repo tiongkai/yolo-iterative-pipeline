@@ -2,7 +2,9 @@
 
 import pytest
 from pathlib import Path
-from pipeline.validation import ValidationResult, HealthReport
+from pipeline.validation import ValidationResult, HealthReport, PipelineValidator
+from pipeline.paths import PathManager
+from pipeline.config import PipelineConfig
 
 
 def test_validation_result_creation():
@@ -122,3 +124,123 @@ def test_health_report_invalid_overall_status():
             models=ValidationResult("pass", [], {}),
             overall_status="invalid"
         )
+
+
+@pytest.fixture
+def setup_test_structure(tmp_path):
+    """Create a valid YOLO directory structure for testing."""
+    # Create all required directories
+    dirs = [
+        "data/working/images",
+        "data/working/labels",
+        "data/verified/images",
+        "data/verified/labels",
+        "data/eval/images",
+        "data/eval/labels",
+        "data/test/images",
+        "data/test/labels",
+        "data/splits",
+        "models/active",
+        "models/checkpoints",
+        "models/deployed",
+        "logs",
+        "configs",
+    ]
+
+    for dir_path in dirs:
+        (tmp_path / dir_path).mkdir(parents=True, exist_ok=True)
+
+    return tmp_path
+
+
+def test_validate_structure_pass(setup_test_structure):
+    """Test structure validation passes with valid structure."""
+    root = setup_test_structure
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_structure()
+
+    assert result.status == "pass"
+    assert len(result.messages) > 0
+    assert "All required directories exist" in " ".join(result.messages)
+
+
+def test_validate_structure_missing_directory(tmp_path):
+    """Test structure validation fails with missing directory."""
+    # Create incomplete structure (missing working/images)
+    (tmp_path / "data" / "working" / "labels").mkdir(parents=True)
+    (tmp_path / "data" / "verified" / "images").mkdir(parents=True)
+    (tmp_path / "data" / "verified" / "labels").mkdir(parents=True)
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(tmp_path, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_structure()
+
+    assert result.status == "error"
+    assert any("data/working/images" in msg for msg in result.messages)
+
+
+def test_validate_structure_orphaned_files(setup_test_structure):
+    """Test structure validation warns about orphaned files."""
+    root = setup_test_structure
+
+    # Create orphaned file in parent directory
+    (root / "data" / "working" / "orphan.txt").write_text("test")
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_structure()
+
+    assert result.status == "warning"
+    assert any("orphaned" in msg.lower() for msg in result.messages)
