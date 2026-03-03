@@ -386,3 +386,79 @@ def test_validate_annotations_invalid_format(setup_test_structure):
 
     assert result.status == "error"
     assert any("invalid format" in msg.lower() for msg in result.messages)
+
+
+def test_validate_model_pass(setup_test_structure):
+    """Test model validation passes when no active model exists."""
+    root = setup_test_structure
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_model()
+
+    # Should pass with info message (no model yet)
+    assert result.status == "pass"
+    assert any("no active model" in msg.lower() for msg in result.messages)
+
+
+def test_full_health_check(setup_test_structure):
+    """Test full_health_check aggregates all validation checks."""
+    import yaml
+
+    root = setup_test_structure
+
+    # Create valid config
+    pipeline_cfg = {
+        "project_name": "test",
+        "classes": ["class1"],
+        "trigger_threshold": 50,
+        "early_trigger": 25,
+        "min_train_images": 50,
+        "eval_split_ratio": 0.15,
+        "stratify": True,
+        "uncertainty_weight": 0.4,
+        "disagreement_weight": 0.35,
+        "diversity_weight": 0.25,
+        "desktop_notify": False,
+        "slack_webhook": None,
+        "keep_last_n_checkpoints": 10,
+    }
+
+    yolo_cfg = {
+        "model": "yolo11n.pt",
+        "epochs": 100,
+    }
+
+    (root / "configs" / "pipeline_config.yaml").write_text(yaml.dump(pipeline_cfg))
+    (root / "configs" / "yolo_config.yaml").write_text(yaml.dump(yolo_cfg))
+
+    config = PipelineConfig.from_yaml(root / "configs" / "pipeline_config.yaml")
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    report = validator.full_health_check()
+
+    assert isinstance(report, HealthReport)
+    assert report.structure.status == "pass"
+    assert report.config.status == "pass"
+    assert report.annotations.status == "pass"
+    assert report.models.status == "pass"
+    assert report.overall_status == "healthy"
+    assert report.is_healthy() is True

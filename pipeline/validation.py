@@ -379,3 +379,115 @@ class PipelineValidator:
                 messages=messages,
                 details=details
             )
+
+    def validate_model(self) -> ValidationResult:
+        """Validate YOLO model file.
+
+        Validates:
+        - .pt file exists (if present)
+        - File loads with YOLO()
+
+        Returns:
+            ValidationResult with status and messages
+        """
+        messages = []
+
+        model_path = self.paths.active_model()
+
+        if not model_path.exists():
+            return ValidationResult(
+                status="pass",
+                messages=["ℹ No active model found (first run)"],
+                details={}
+            )
+
+        # Try to load model
+        try:
+            from ultralytics import YOLO
+            model = YOLO(str(model_path))
+            messages.append(f"✓ Active model loads successfully: {model_path.name}")
+
+            return ValidationResult(
+                status="pass",
+                messages=messages,
+                details={"model_path": str(model_path)}
+            )
+        except Exception as e:
+            return ValidationResult(
+                status="error",
+                messages=[f"✗ Active model failed to load: {e}"],
+                details={"model_path": str(model_path)}
+            )
+
+    def full_health_check(self) -> HealthReport:
+        """Run all validation checks and generate health report.
+
+        Runs:
+        - Structure validation
+        - Config validation
+        - Annotation validation (working + verified)
+        - Model validation
+
+        Returns:
+            HealthReport with all check results
+        """
+        # Run all validations
+        structure = self.validate_structure()
+        config = self.validate_config()
+
+        # Validate annotations in working and verified
+        working_annotations = self.validate_annotations(self.paths.working_dir())
+        verified_annotations = self.validate_annotations(self.paths.verified_dir())
+
+        # Combine annotation results
+        ann_messages = []
+        ann_details = {}
+        ann_status = "pass"
+
+        if working_annotations.status == "pass":
+            ann_messages.extend([f"Working: {msg}" for msg in working_annotations.messages])
+        elif working_annotations.status == "warning":
+            ann_messages.extend([f"Working: {msg}" for msg in working_annotations.messages])
+            ann_status = "warning"
+        else:
+            ann_messages.extend([f"Working: {msg}" for msg in working_annotations.messages])
+            ann_status = "error"
+
+        if verified_annotations.status == "pass":
+            ann_messages.extend([f"Verified: {msg}" for msg in verified_annotations.messages])
+        elif verified_annotations.status == "warning":
+            ann_messages.extend([f"Verified: {msg}" for msg in verified_annotations.messages])
+            if ann_status == "pass":
+                ann_status = "warning"
+        else:
+            ann_messages.extend([f"Verified: {msg}" for msg in verified_annotations.messages])
+            ann_status = "error"
+
+        ann_details.update(working_annotations.details)
+        ann_details.update(verified_annotations.details)
+
+        annotations = ValidationResult(
+            status=ann_status,
+            messages=ann_messages,
+            details=ann_details
+        )
+
+        models = self.validate_model()
+
+        # Determine overall status
+        statuses = [structure.status, config.status, annotations.status, models.status]
+
+        if "error" in statuses:
+            overall_status = "errors"
+        elif "warning" in statuses:
+            overall_status = "warnings"
+        else:
+            overall_status = "healthy"
+
+        return HealthReport(
+            structure=structure,
+            config=config,
+            annotations=annotations,
+            models=models,
+            overall_status=overall_status
+        )
