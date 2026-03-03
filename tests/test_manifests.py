@@ -45,7 +45,7 @@ def test_generate_manifests_creates_files(setup_verified_data):
 
     paths = PathManager(root, config)
 
-    train_count, eval_count = generate_manifests(paths, config)
+    train_count, eval_count = generate_manifests(paths, config, random_seed=42)
 
     # Check manifests exist
     assert paths.train_manifest().exists()
@@ -78,7 +78,7 @@ def test_generate_manifests_correct_split_ratio(setup_verified_data):
 
     paths = PathManager(root, config)
 
-    train_count, eval_count = generate_manifests(paths, config)
+    train_count, eval_count = generate_manifests(paths, config, random_seed=42)
 
     # 10 images: 70% = 7 train, 30% = 3 eval
     assert train_count == 7
@@ -107,7 +107,7 @@ def test_generate_manifests_content_format(setup_verified_data):
 
     paths = PathManager(root, config)
 
-    generate_manifests(paths, config)
+    generate_manifests(paths, config, random_seed=42)
 
     # Read manifests
     with open(paths.train_manifest()) as f:
@@ -158,4 +158,75 @@ def test_generate_manifests_insufficient_data(tmp_path):
 
     # Should raise ValueError
     with pytest.raises(ValueError, match="Need at least 10 labels"):
-        generate_manifests(paths, config)
+        generate_manifests(paths, config, random_seed=42)
+
+
+def test_generate_manifests_reproducible(setup_verified_data):
+    """Test generate_manifests produces consistent splits with same seed."""
+    root = setup_verified_data
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=10,
+        eval_split_ratio=0.2,
+        stratify=False,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+
+    # Generate twice with same seed
+    generate_manifests(paths, config, random_seed=42)
+    with open(paths.train_manifest()) as f:
+        train1 = f.read()
+
+    generate_manifests(paths, config, random_seed=42)
+    with open(paths.train_manifest()) as f:
+        train2 = f.read()
+
+    # Should be identical
+    assert train1 == train2
+
+
+def test_generate_manifests_missing_image(tmp_path):
+    """Test generate_manifests raises error when image file is missing."""
+    verified_labels = tmp_path / "data" / "verified" / "labels"
+    verified_images = tmp_path / "data" / "verified" / "images"
+    verified_labels.mkdir(parents=True)
+    verified_images.mkdir(parents=True)
+
+    # Create 10 labels but only 9 images (missing img005.png)
+    for i in range(10):
+        (verified_labels / f"img{i:03d}.txt").write_text(f"0 0.5 0.5 0.1 0.1")
+        if i != 5:  # Skip creating image for img005
+            (verified_images / f"img{i:03d}.png").touch()
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=10,
+        eval_split_ratio=0.2,
+        stratify=False,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(tmp_path, config)
+
+    # Should raise FileNotFoundError
+    with pytest.raises(FileNotFoundError, match="Image file not found for label img005.txt"):
+        generate_manifests(paths, config, random_seed=42)

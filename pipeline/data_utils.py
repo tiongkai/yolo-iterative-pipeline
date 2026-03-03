@@ -269,7 +269,8 @@ def sample_eval_set(
 
 def generate_manifests(
     paths: 'PathManager',
-    config: 'PipelineConfig'
+    config: 'PipelineConfig',
+    random_seed: int = 42
 ) -> Tuple[int, int]:
     """Generate train and eval manifests for current verified dataset.
 
@@ -281,6 +282,7 @@ def generate_manifests(
     Args:
         paths: PathManager instance
         config: PipelineConfig with split settings
+        random_seed: Random seed for reproducible splits (default: 42)
 
     Returns:
         (train_count, eval_count) tuple
@@ -298,6 +300,7 @@ def generate_manifests(
         )
 
     # Simple random split (stratified not implemented yet)
+    random.seed(random_seed)
     random.shuffle(all_labels)
     split_idx = int(len(all_labels) * (1 - config.eval_split_ratio))
     train_labels = all_labels[:split_idx]
@@ -314,8 +317,11 @@ def generate_manifests(
             if image_path.exists():
                 return image_path
 
-        # Fallback: assume .png
-        return images_dir / f"{label_path.stem}.png"
+        # Image not found - raise error instead of silent fallback
+        raise FileNotFoundError(
+            f"Image file not found for label {label_path.name}. "
+            f"Tried extensions: .png, .jpg, .jpeg (case variations)"
+        )
 
     train_images = [label_to_image_path(lbl) for lbl in train_labels]
     eval_images = [label_to_image_path(lbl) for lbl in eval_labels]
@@ -324,9 +330,9 @@ def generate_manifests(
     paths.splits_dir().mkdir(parents=True, exist_ok=True)
 
     with open(paths.train_manifest(), 'w') as f:
-        f.write('\n'.join(str(img) for img in train_images))
+        f.write('\n'.join(str(img) for img in train_images) + '\n')
 
     with open(paths.eval_manifest(), 'w') as f:
-        f.write('\n'.join(str(img) for img in eval_images))
+        f.write('\n'.join(str(img) for img in eval_images) + '\n')
 
     return len(train_images), len(eval_images)
