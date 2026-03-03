@@ -130,6 +130,11 @@ class ProcessManager:
             # Launch auto_move if enabled
             if not no_auto_move:
                 auto_move_script = Path.cwd() / "scripts" / "auto_move_verified.py"
+                if not auto_move_script.exists():
+                    logger.error("❌ Error: scripts/auto_move_verified.py not found")
+                    logger.error("   Run this command from your project root directory")
+                    sys.exit(1)
+
                 auto_move_cmd = [
                     sys.executable,
                     str(auto_move_script)
