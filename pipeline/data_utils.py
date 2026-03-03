@@ -4,6 +4,12 @@ import shutil
 import random
 from collections import defaultdict
 
+# Forward declaration for type hints (imported at end of file to avoid circular import)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from pipeline.paths import PathManager
+    from pipeline.config import PipelineConfig
+
 def validate_bbox_coords(x: float, y: float, w: float, h: float) -> Tuple[bool, Optional[str]]:
     """Validate YOLO bounding box coordinates.
 
@@ -259,3 +265,68 @@ def sample_eval_set(
                     break
 
     return sampled
+
+
+def generate_manifests(
+    paths: 'PathManager',
+    config: 'PipelineConfig'
+) -> Tuple[int, int]:
+    """Generate train and eval manifests for current verified dataset.
+
+    Re-splits the entire verified dataset every time this is called.
+    Maintains config.eval_split_ratio (e.g., 85% train, 15% eval).
+
+    All files remain in verified/ directory - manifests just reference them.
+
+    Args:
+        paths: PathManager instance
+        config: PipelineConfig with split settings
+
+    Returns:
+        (train_count, eval_count) tuple
+
+    Raises:
+        ValueError: If not enough labels in verified/
+    """
+    # Find all labels in verified/labels/
+    all_labels = list(paths.verified_labels().glob("*.txt"))
+
+    if len(all_labels) < config.min_train_images:
+        raise ValueError(
+            f"Need at least {config.min_train_images} labels, "
+            f"found {len(all_labels)}"
+        )
+
+    # Simple random split (stratified not implemented yet)
+    random.shuffle(all_labels)
+    split_idx = int(len(all_labels) * (1 - config.eval_split_ratio))
+    train_labels = all_labels[:split_idx]
+    eval_labels = all_labels[split_idx:]
+
+    # Convert label paths to image paths
+    def label_to_image_path(label_path: Path) -> Path:
+        """Convert label path to corresponding image path."""
+        images_dir = paths.verified_images()
+
+        # Try different image extensions
+        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
+            image_path = images_dir / f"{label_path.stem}{ext}"
+            if image_path.exists():
+                return image_path
+
+        # Fallback: assume .png
+        return images_dir / f"{label_path.stem}.png"
+
+    train_images = [label_to_image_path(lbl) for lbl in train_labels]
+    eval_images = [label_to_image_path(lbl) for lbl in eval_labels]
+
+    # Write manifests (absolute paths)
+    paths.splits_dir().mkdir(parents=True, exist_ok=True)
+
+    with open(paths.train_manifest(), 'w') as f:
+        f.write('\n'.join(str(img) for img in train_images))
+
+    with open(paths.eval_manifest(), 'w') as f:
+        f.write('\n'.join(str(img) for img in eval_images))
+
+    return len(train_images), len(eval_images)
