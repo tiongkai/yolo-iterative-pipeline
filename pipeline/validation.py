@@ -120,7 +120,10 @@ class PipelineValidator:
             (self.paths.test_images(), "data/test/images/"),
             (self.paths.test_labels(), "data/test/labels/"),
             (self.paths.splits_dir(), "data/splits/"),
+            (self.paths.active_model().parent, "models/active/"),
             (self.paths.checkpoint_dir(), "models/checkpoints/"),
+            (self.paths.deployed_dir(), "models/deployed/"),
+            (self.paths.pipeline_config().parent, "configs/"),
             (self.paths.logs_dir(), "logs/"),
         ]
 
