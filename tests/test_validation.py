@@ -244,3 +244,145 @@ def test_validate_structure_orphaned_files(setup_test_structure):
 
     assert result.status == "warning"
     assert any("orphaned" in msg.lower() for msg in result.messages)
+
+
+def test_validate_config_pass(setup_test_structure):
+    """Test config validation passes with valid config files."""
+    import yaml
+
+    root = setup_test_structure
+
+    # Create valid config files
+    pipeline_cfg = {
+        "project_name": "test",
+        "classes": ["class1", "class2"],
+        "trigger_threshold": 50,
+        "early_trigger": 25,
+        "min_train_images": 50,
+        "eval_split_ratio": 0.15,
+        "stratify": True,
+        "uncertainty_weight": 0.4,
+        "disagreement_weight": 0.35,
+        "diversity_weight": 0.25,
+        "desktop_notify": False,
+        "slack_webhook": None,
+        "keep_last_n_checkpoints": 10,
+    }
+
+    yolo_cfg = {
+        "model": "yolo11n.pt",
+        "epochs": 100,
+        "batch_size": 16,
+        "imgsz": 1280,
+    }
+
+    (root / "configs" / "pipeline_config.yaml").write_text(yaml.dump(pipeline_cfg))
+    (root / "configs" / "yolo_config.yaml").write_text(yaml.dump(yolo_cfg))
+
+    config = PipelineConfig.from_yaml(root / "configs" / "pipeline_config.yaml")
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_config()
+
+    assert result.status == "pass"
+
+
+def test_validate_config_missing_file(setup_test_structure):
+    """Test config validation fails with missing config file."""
+    root = setup_test_structure
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_config()
+
+    assert result.status == "error"
+    assert any("pipeline_config.yaml" in msg for msg in result.messages)
+
+
+def test_validate_annotations_pass(setup_test_structure):
+    """Test annotation validation passes with valid YOLO format."""
+    root = setup_test_structure
+
+    # Create valid annotation files
+    labels_dir = root / "data" / "verified" / "labels"
+    images_dir = root / "data" / "verified" / "images"
+
+    # Create matching image and label
+    (labels_dir / "img001.txt").write_text("0 0.5 0.5 0.1 0.1\n1 0.3 0.3 0.2 0.2")
+    (images_dir / "img001.png").touch()
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1", "class2"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_annotations(root / "data" / "verified")
+
+    assert result.status == "pass"
+    assert result.details["label_count"] == 1
+
+
+def test_validate_annotations_invalid_format(setup_test_structure):
+    """Test annotation validation fails with invalid YOLO format."""
+    root = setup_test_structure
+
+    labels_dir = root / "data" / "verified" / "labels"
+
+    # Create invalid annotation (not enough values)
+    (labels_dir / "img001.txt").write_text("0 0.5 0.5")
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_annotations(root / "data" / "verified")
+
+    assert result.status == "error"
+    assert any("invalid format" in msg.lower() for msg in result.messages)
