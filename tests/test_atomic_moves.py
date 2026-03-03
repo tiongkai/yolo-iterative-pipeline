@@ -3,6 +3,7 @@
 import pytest
 from pathlib import Path
 import time
+import os
 from scripts.auto_move_verified import atomic_move_pair, cleanup_tmp_files
 
 
@@ -122,3 +123,64 @@ def test_cleanup_tmp_files(tmp_path):
 
     # Check normal files kept
     assert (verified_labels / "good.txt").exists()
+
+
+def test_atomic_move_pair_partial_rename_failure(setup_files, monkeypatch):
+    """Test rollback when second rename fails after first succeeds."""
+    f = setup_files
+
+    # Mock os.rename to fail on second call
+    rename_count = 0
+    original_rename = os.rename
+
+    def mock_rename(src, dst):
+        nonlocal rename_count
+        rename_count += 1
+        if rename_count == 2:
+            raise OSError("Simulated disk full")
+        return original_rename(src, dst)
+
+    monkeypatch.setattr("os.rename", mock_rename)
+
+    result = atomic_move_pair(
+        f["label_src"],
+        f["image_src"],
+        f["label_dst"],
+        f["image_dst"]
+    )
+
+    # Should fail
+    assert result is False
+
+    # Source files should still exist (rollback successful)
+    assert f["label_src"].exists()
+    assert f["image_src"].exists()
+
+    # Destination should be clean (no partial files)
+    assert not f["label_dst"].exists()
+    assert not f["image_dst"].exists()
+
+
+def test_atomic_move_pair_destination_exists(setup_files):
+    """Test atomic_move_pair fails when destination already exists."""
+    f = setup_files
+
+    # Create existing destination file
+    f["label_dst"].write_text("existing content")
+
+    result = atomic_move_pair(
+        f["label_src"],
+        f["image_src"],
+        f["label_dst"],
+        f["image_dst"]
+    )
+
+    # Should fail
+    assert result is False
+
+    # Source files should still exist
+    assert f["label_src"].exists()
+    assert f["image_src"].exists()
+
+    # Existing destination should be unchanged
+    assert f["label_dst"].read_text() == "existing content"

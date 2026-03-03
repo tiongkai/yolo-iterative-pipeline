@@ -107,10 +107,12 @@ def atomic_move_pair(
     """Atomically move label and image pair using copy-then-rename.
 
     Steps:
-    1. Copy both files with .tmp extension
-    2. Verify both copies exist
-    3. Rename atomically (os.rename is atomic on POSIX)
-    4. Delete originals only after both renames succeed
+    1. Validate source files exist
+    2. Check destination files don't already exist
+    3. Copy both files with .tmp extension
+    4. Verify both copies exist
+    5. Rename atomically (os.rename is atomic on POSIX)
+    6. Delete originals only after both renames succeed
 
     If any step fails, rolls back any partial operations.
 
@@ -123,8 +125,25 @@ def atomic_move_pair(
     Returns:
         True if successful, False if failed
     """
+    # Validate source files exist
+    if not label_src.exists():
+        logger.error(f"Source label does not exist: {label_src}")
+        return False
+    if not image_src.exists():
+        logger.error(f"Source image does not exist: {image_src}")
+        return False
+
+    # Check if destination already exists
+    if label_dst.exists() or image_dst.exists():
+        logger.warning(f"Destination already exists: {label_dst.name}")
+        return False
+
     label_tmp = label_dst.parent / f"{label_dst.name}.tmp"
     image_tmp = image_dst.parent / f"{image_dst.name}.tmp"
+
+    # Track which renames succeeded for proper rollback
+    label_renamed = False
+    image_renamed = False
 
     try:
         # Step 1: Copy both files with .tmp extension
@@ -137,7 +156,10 @@ def atomic_move_pair(
 
         # Step 3: Rename atomically (atomic on POSIX systems)
         os.rename(str(label_tmp), str(label_dst))
+        label_renamed = True  # Track success
+
         os.rename(str(image_tmp), str(image_dst))
+        image_renamed = True  # Track success
 
         # Step 4: Delete originals only after both renames succeed
         label_src.unlink()
@@ -148,17 +170,35 @@ def atomic_move_pair(
     except Exception as e:
         logger.error(f"Atomic move failed: {e}")
 
-        # Rollback: remove any .tmp files created
-        if label_tmp.exists():
-            label_tmp.unlink()
-        if image_tmp.exists():
-            image_tmp.unlink()
+        # Rollback based on what succeeded
+        if label_renamed:
+            # Label was moved, move it back
+            try:
+                if label_dst.exists():
+                    os.rename(str(label_dst), str(label_tmp))
+            except Exception as rollback_err:
+                logger.warning(f"Failed to rollback label: {rollback_err}")
 
-        # Rollback: remove any partial destination files
-        if label_dst.exists():
-            label_dst.unlink()
-        if image_dst.exists():
-            image_dst.unlink()
+        if image_renamed:
+            # Image was moved, move it back
+            try:
+                if image_dst.exists():
+                    os.rename(str(image_dst), str(image_tmp))
+            except Exception as rollback_err:
+                logger.warning(f"Failed to rollback image: {rollback_err}")
+
+        # Clean up .tmp files
+        try:
+            if label_tmp.exists():
+                label_tmp.unlink()
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to cleanup {label_tmp.name}: {cleanup_err}")
+
+        try:
+            if image_tmp.exists():
+                image_tmp.unlink()
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to cleanup {image_tmp.name}: {cleanup_err}")
 
         return False
 
