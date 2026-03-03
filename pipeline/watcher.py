@@ -137,7 +137,7 @@ class FileWatcher:
             logger.info(f"Training completed: {version}")
 
             # Promote if improved
-            promoted = promote_model(checkpoint_dir, Path("models/active"))
+            promoted = promote_model(checkpoint_dir, paths.active_model().parent, paths)
 
             if promoted:
                 # Re-score priority queue

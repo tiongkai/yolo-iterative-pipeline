@@ -75,6 +75,11 @@ class PathManager:
         """Get test labels directory path."""
         return self.test_dir() / "labels"
 
+    # SAM3 directory method
+    def sam3_dir(self) -> Path:
+        """Get SAM3 annotations directory path."""
+        return self.data_dir / "sam3_annotations"
+
     # Manifest paths
     def splits_dir(self) -> Path:
         """Get splits directory path."""

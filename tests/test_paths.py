@@ -88,6 +88,9 @@ def test_path_manager_eval_and_test_paths(tmp_path):
     assert paths.test_images() == tmp_path / "data" / "test" / "images"
     assert paths.test_labels() == tmp_path / "data" / "test" / "labels"
 
+    # Test sam3 path
+    assert paths.sam3_dir() == tmp_path / "data" / "sam3_annotations"
+
 
 def test_path_manager_manifest_paths(tmp_path):
     """Test PathManager returns correct manifest paths."""

@@ -9,7 +9,7 @@ from ultralytics import YOLO
 import yaml
 
 from pipeline.config import PipelineConfig, YOLOConfig
-from pipeline.data_utils import get_image_label_pairs, sample_eval_set, generate_manifests
+from pipeline.data_utils import generate_manifests
 from pipeline.metrics import (
     calculate_f1_score,
     format_metrics,
@@ -70,6 +70,23 @@ def init_model(
     return model, "pretrained"
 
 
+def _make_relative_safe(path: Path, root: Path) -> str:
+    """Make path relative to root, fallback to absolute if not possible.
+
+    Args:
+        path: Path to make relative
+        root: Root directory to make relative to
+
+    Returns:
+        Relative path string if possible, absolute path otherwise
+    """
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        # Path is not relative to root (symlink, mount, etc)
+        return str(path.absolute())
+
+
 def create_data_yaml(
     train_manifest: Path,
     eval_manifest: Path,
@@ -90,9 +107,9 @@ def create_data_yaml(
     """
     data = {
         "path": str(root_dir),
-        "train": str(train_manifest.relative_to(root_dir)),
-        "val": str(eval_manifest.relative_to(root_dir)),
-        "test": str(test_dir.relative_to(root_dir)),
+        "train": _make_relative_safe(train_manifest, root_dir),
+        "val": _make_relative_safe(eval_manifest, root_dir),
+        "test": _make_relative_safe(test_dir, root_dir),
         "names": {i: name for i, name in enumerate(classes)}
     }
 
@@ -367,7 +384,7 @@ def main():
     if model_path.exists():
         scores = score_all_images(
             working_dir=paths.working_dir(),
-            sam3_dir=Path("data/sam3_annotations"),  # Not in PathManager yet
+            sam3_dir=paths.sam3_dir(),
             model_path=model_path
         )
         save_priority_queue(scores, paths.priority_queue(), version)
