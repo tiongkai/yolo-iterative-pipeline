@@ -168,8 +168,12 @@ def sample_eval_set(
 
     random.seed(random_seed)
 
-    # Get all label files
-    label_files = list(verified_dir.glob("*.txt"))
+    # Get all label files (expects verified/labels/*.txt structure)
+    labels_dir = verified_dir / 'labels'
+    if not labels_dir.exists():
+        raise FileNotFoundError(f"Labels directory not found: {labels_dir}")
+
+    label_files = list(labels_dir.glob("*.txt"))
     n_samples = int(len(label_files) * split_ratio)
 
     if n_samples == 0:
@@ -220,11 +224,19 @@ def sample_eval_set(
         # Simple random sampling
         sampled = random.sample(label_files, n_samples)
 
-    # Move sampled files to eval directory
-    eval_dir.mkdir(parents=True, exist_ok=True)
+    # Move sampled files to eval directory (with images/labels structure)
+    eval_labels_dir = eval_dir / 'labels'
+    eval_images_dir = eval_dir / 'images'
+    eval_labels_dir.mkdir(parents=True, exist_ok=True)
+    eval_images_dir.mkdir(parents=True, exist_ok=True)
+
+    images_dir = verified_dir / 'images'
+    if not images_dir.exists():
+        raise FileNotFoundError(f"Images directory not found: {images_dir}")
+
     for label_file in sampled:
         # Move label file
-        dest = eval_dir / label_file.name
+        dest = eval_labels_dir / label_file.name
         if dest.exists():
             dest.unlink()
         shutil.move(str(label_file), str(dest))
@@ -237,9 +249,9 @@ def sample_eval_set(
                 break
             # Try both lowercase and uppercase
             for case_ext in [ext, ext.upper()]:
-                img_file = verified_dir / f"{label_file.stem}{case_ext}"
+                img_file = images_dir / f"{label_file.stem}{case_ext}"
                 if img_file.exists():
-                    dest_img = eval_dir / img_file.name
+                    dest_img = eval_images_dir / img_file.name
                     if dest_img.exists():
                         dest_img.unlink()
                     shutil.move(str(img_file), str(dest_img))

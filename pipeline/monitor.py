@@ -17,9 +17,12 @@ def display_status():
     history_path = Path("logs/training_history.json")
     history = load_training_history(history_path)
 
-    # Count files
-    verified_count = len(list(Path("data/verified").glob("*.txt")))
-    working_count = len(list(Path("data/working").glob("*.txt")))
+    # Count files (expects images/labels structure)
+    verified_labels = Path("data/verified/labels")
+    working_labels = Path("data/working/labels")
+
+    verified_count = len(list(verified_labels.glob("*.txt"))) if verified_labels.exists() else 0
+    working_count = len(list(working_labels.glob("*.txt"))) if working_labels.exists() else 0
     test_count = len(list(Path("data/test/labels").glob("*.txt")))
 
     # Active model info

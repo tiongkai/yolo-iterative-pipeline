@@ -14,9 +14,14 @@ Usage:
 
 import time
 import shutil
+import sys
 from pathlib import Path
 from datetime import datetime
 import logging
+
+# Add project root to path to import verification tracker
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from scripts.track_verification import VerificationTracker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,27 +70,41 @@ def is_valid_yolo_annotation(label_path: Path) -> bool:
 
 
 def find_image_for_label(label_path: Path) -> Path:
-    """Find corresponding image file for a label."""
+    """
+    Find corresponding image file for a label.
+
+    Expects structure:
+        data/working/labels/image.txt
+        data/working/images/image.png
+    """
     base_name = label_path.stem
-    working_dir = label_path.parent
+    # Get parent of labels/ directory (working/)
+    working_dir = label_path.parent.parent
+    images_dir = working_dir / 'images'
 
     # Try exact match first
     for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-        img_path = working_dir / f"{base_name}{ext}"
+        img_path = images_dir / f"{base_name}{ext}"
         if img_path.exists():
             return img_path
 
     # Try with "_detected" suffix (common in detection outputs)
     for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-        img_path = working_dir / f"{base_name}_detected{ext}"
+        img_path = images_dir / f"{base_name}_detected{ext}"
         if img_path.exists():
             return img_path
 
     return None
 
 
-def move_verified_file(label_path: Path, verified_dir: Path) -> bool:
-    """Move label and corresponding image to verified directory."""
+def move_verified_file(label_path: Path, verified_dir: Path, tracker: VerificationTracker = None) -> bool:
+    """
+    Move label and corresponding image to verified directory.
+
+    Moves:
+        data/working/labels/image.txt → data/verified/labels/image.txt
+        data/working/images/image.png → data/verified/images/image.png
+    """
     try:
         # Find image
         img_path = find_image_for_label(label_path)
@@ -98,13 +117,21 @@ def move_verified_file(label_path: Path, verified_dir: Path) -> bool:
             logger.warning(f"Invalid YOLO format: {label_path.name}")
             return False
 
-        # Move both files
-        verified_dir.mkdir(parents=True, exist_ok=True)
+        # Create verified subdirectories
+        verified_labels_dir = verified_dir / 'labels'
+        verified_images_dir = verified_dir / 'images'
+        verified_labels_dir.mkdir(parents=True, exist_ok=True)
+        verified_images_dir.mkdir(parents=True, exist_ok=True)
 
-        shutil.move(str(label_path), str(verified_dir / label_path.name))
-        shutil.move(str(img_path), str(verified_dir / img_path.name))
+        # Move both files to respective subdirectories
+        shutil.move(str(label_path), str(verified_labels_dir / label_path.name))
+        shutil.move(str(img_path), str(verified_images_dir / img_path.name))
 
-        logger.info(f"✓ Moved: {label_path.stem}")
+        # Log as verified in tracker
+        if tracker:
+            tracker.mark_verified(img_path.name)
+
+        logger.info(f"✓ Moved: {label_path.stem} → verified/")
         return True
 
     except Exception as e:
@@ -125,7 +152,14 @@ def auto_move_loop(
     stability_threshold: int = 60
 ):
     """
-    Main loop that monitors working directory and moves stable files.
+    Main loop that monitors working/labels/ directory and moves stable files.
+
+    IMPORTANT: Only moves files that were modified AFTER this script started.
+    This ensures pre-labeled files don't auto-move without manual review.
+
+    Expected structure:
+        working_dir/labels/*.txt  → verified_dir/labels/*.txt
+        working_dir/images/*.png  → verified_dir/images/*.png
 
     Args:
         working_dir: Directory to monitor (data/working/)
@@ -133,35 +167,78 @@ def auto_move_loop(
         check_interval: Seconds between checks
         stability_threshold: Seconds of no modification before moving
     """
-    logger.info(f"Starting auto-move watcher")
+    # Initialize verification tracker
+    tracker = VerificationTracker()
+
+    # Record start time - only files modified after this will be moved
+    script_start_time = time.time()
+
+    # Monitor labels subdirectory
+    labels_dir = working_dir / 'labels'
+    if not labels_dir.exists():
+        logger.error(f"Labels directory not found: {labels_dir}")
+        logger.error(f"Expected structure: {working_dir}/labels/ and {working_dir}/images/")
+        return
+
+    logger.info(f"Starting auto-move watcher with verification tracking")
     logger.info(f"  Working dir: {working_dir}")
+    logger.info(f"  Labels dir: {labels_dir}")
     logger.info(f"  Verified dir: {verified_dir}")
     logger.info(f"  Check interval: {check_interval}s")
     logger.info(f"  Stability threshold: {stability_threshold}s")
+    logger.info(f"  Script start time: {datetime.fromtimestamp(script_start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"")
+    logger.info(f"⚠️  IMPORTANT: Only files modified AFTER script start will be moved")
+    logger.info(f"⚠️  Pre-labeled files will NOT auto-move until you open/save them in X-AnyLabeling")
+    logger.info(f"")
+
+    # Initial scan of working directory
+    tracker.scan_working_dir(working_dir / 'images')
+    stats = tracker.get_stats()
+    logger.info(f"  Initial status: {stats['total_verified']} verified, {stats['total_unverified']} unverified")
 
     try:
         while True:
-            # Find all label files in working directory
-            label_files = list(working_dir.glob("*.txt"))
+            # Find all label files in working/labels/ directory
+            label_files = list(labels_dir.glob("*.txt"))
 
             moved_count = 0
+            skipped_count = 0
+
             for label_path in label_files:
+                # Get file modification time
+                file_mtime = label_path.stat().st_mtime
+
+                # Skip if file was NOT modified after script started
+                if file_mtime < script_start_time:
+                    skipped_count += 1
+                    continue
+
                 # Check if file is stable (not being modified)
                 file_age = get_file_age(label_path)
 
                 if file_age >= stability_threshold:
-                    if move_verified_file(label_path, verified_dir):
+                    if move_verified_file(label_path, verified_dir, tracker):
                         moved_count += 1
 
             if moved_count > 0:
-                verified_count = len(list(verified_dir.glob("*.txt")))
+                verified_labels_dir = verified_dir / 'labels'
+                verified_count = len(list(verified_labels_dir.glob("*.txt"))) if verified_labels_dir.exists() else 0
+                stats = tracker.get_stats()
                 logger.info(f"Moved {moved_count} files. Total verified: {verified_count}")
+                logger.info(f"  Progress: {stats['total_verified']} verified / {stats['total']} total ({stats['verification_rate']:.1f}%)")
+
+            # Log status every 10 checks (10 minutes by default)
+            if int(time.time() - script_start_time) % (check_interval * 10) < check_interval:
+                logger.info(f"Status: {skipped_count} pre-labeled files waiting for review, {len(label_files) - skipped_count} files recently modified")
 
             # Wait before next check
             time.sleep(check_interval)
 
     except KeyboardInterrupt:
         logger.info("Auto-move watcher stopped")
+        stats = tracker.get_stats()
+        logger.info(f"Final status: {stats['total_verified']} verified, {stats['total_unverified']} remaining")
 
 
 def main():

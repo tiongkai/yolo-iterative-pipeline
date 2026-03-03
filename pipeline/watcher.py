@@ -67,8 +67,15 @@ class FileWatcher:
         self.lock_file = Path("logs/.training.lock")
 
     def count_verified_images(self) -> int:
-        """Count verified annotation files."""
-        return len(list(self.verified_dir.glob("*.txt")))
+        """
+        Count verified annotation files.
+
+        Expects structure: verified/labels/*.txt
+        """
+        labels_dir = self.verified_dir / 'labels'
+        if not labels_dir.exists():
+            return 0
+        return len(list(labels_dir.glob("*.txt")))
 
     def check_and_trigger(self):
         """Check if training should trigger and execute if so."""

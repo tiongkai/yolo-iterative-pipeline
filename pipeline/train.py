@@ -123,16 +123,18 @@ def train_model(
     # Determine source for training
     if bootstrap:
         print("Bootstrap mode: training on SAM3 annotations")
-        train_source = Path("data/sam3_annotations")
-        # Copy SAM3 to verified for bootstrap
-        verified_dir.mkdir(parents=True, exist_ok=True)
-        for file in train_source.glob("*.txt"):
-            shutil.copy(file, verified_dir / file.name)
+        print("NOTE: Bootstrap not recommended - manually verify data instead")
+        print("Skipping bootstrap - requires manual setup of verified/ directory")
+        train_source = verified_dir
     else:
         train_source = verified_dir
 
-    # Check minimum images
-    train_files = list(verified_dir.glob("*.txt"))
+    # Check minimum images (expects verified/labels/*.txt structure)
+    labels_dir = verified_dir / 'labels'
+    if not labels_dir.exists():
+        raise ValueError(f"Labels directory not found: {labels_dir}")
+
+    train_files = list(labels_dir.glob("*.txt"))
     if len(train_files) < pipeline_config.min_train_images:
         raise ValueError(
             f"Need at least {pipeline_config.min_train_images} images, "
@@ -172,7 +174,7 @@ def train_model(
     run_name = f"model_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # Train
-    print(f"Training on {len(list(verified_dir.glob('*.txt')))} images...")
+    print(f"Training on {len(train_files)} images...")
     results = model.train(
         data=str(data_yaml),
         epochs=yolo_config.epochs,
@@ -209,7 +211,7 @@ def train_model(
     append_training_history(
         log_path=log_path,
         version=version,
-        train_images=len(list(verified_dir.glob("*.txt"))),
+        train_images=len(train_files),
         eval_metrics=eval_metrics,
         test_metrics=test_metrics,
         training_time_minutes=training_time,
