@@ -1,7 +1,7 @@
 """YOLO training pipeline with dual evaluation."""
 
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, TYPE_CHECKING
 import time
 import shutil
 from datetime import datetime
@@ -16,6 +16,53 @@ from pipeline.metrics import (
     append_training_history,
     load_training_history
 )
+
+if TYPE_CHECKING:
+    from pipeline.paths import PathManager
+
+
+def init_model(
+    paths: 'PathManager',
+    yolo_config: YOLOConfig,
+    from_scratch: bool = False
+) -> Tuple[YOLO, str]:
+    """Initialize YOLO model with smart resume.
+
+    Checks for active model and resumes from it if available.
+    Falls back to pretrained model if:
+    - No active model exists
+    - Active model fails to load (corrupted)
+    - from_scratch flag is set
+
+    Args:
+        paths: PathManager instance
+        yolo_config: YOLO configuration
+        from_scratch: If True, ignore active model and use pretrained
+
+    Returns:
+        (model, source) where source is "active" or "pretrained"
+    """
+    active_model_path = paths.active_model()
+
+    # Check if we should use active model
+    if not from_scratch and active_model_path.exists():
+        try:
+            print(f"Loading active model from {active_model_path.name}...")
+            model = YOLO(str(active_model_path))
+            print(f"✓ Resuming from active model (version {active_model_path.parent.parent.name})")
+            return model, "active"
+        except Exception as e:
+            print(f"⚠ Failed to load active model: {e}")
+            print(f"  Falling back to pretrained model...")
+    elif from_scratch:
+        print(f"🔄 Training from scratch (--from-scratch flag set)")
+    else:
+        print(f"ℹ No active model found, using pretrained model")
+
+    # Use pretrained model
+    print(f"Loading pretrained model {yolo_config.model}...")
+    model = YOLO(yolo_config.model)
+    return model, "pretrained"
 
 
 def create_data_yaml(
@@ -99,14 +146,18 @@ def evaluate_model(
 def train_model(
     pipeline_config: PipelineConfig,
     yolo_config: YOLOConfig,
-    bootstrap: bool = False
+    paths: 'PathManager',
+    bootstrap: bool = False,
+    from_scratch: bool = False
 ) -> Tuple[str, Path]:
     """Train YOLO model.
 
     Args:
         pipeline_config: Pipeline configuration
         yolo_config: YOLO training configuration
+        paths: PathManager instance for path resolution
         bootstrap: If True, train on SAM3 annotations (noisy baseline)
+        from_scratch: If True, ignore active model and use pretrained
 
     Returns:
         (model_version, checkpoint_dir)
@@ -165,9 +216,8 @@ def train_model(
         output_path=data_yaml
     )
 
-    # Initialize model
-    print(f"Initializing {yolo_config.model}...")
-    model = YOLO(yolo_config.model)
+    # Initialize model (with smart resume)
+    model, source = init_model(paths, yolo_config, from_scratch=from_scratch)
 
     # Get version before training
     version = get_next_version(log_path)
@@ -274,10 +324,13 @@ def promote_model(checkpoint_dir: Path, active_dir: Path) -> bool:
 def main():
     """CLI entry point for training."""
     import argparse
+    from pipeline.paths import PathManager
 
     parser = argparse.ArgumentParser(description="Train YOLO model")
     parser.add_argument("--bootstrap", action="store_true",
                        help="Train on SAM3 annotations (bootstrap)")
+    parser.add_argument("--from-scratch", action="store_true",
+                       help="Train from pretrained model (ignore active model)")
     parser.add_argument("--pipeline-config", type=Path,
                        default="configs/pipeline_config.yaml")
     parser.add_argument("--yolo-config", type=Path,
@@ -289,8 +342,17 @@ def main():
     pipeline_config = PipelineConfig.from_yaml(args.pipeline_config)
     yolo_config = YOLOConfig.from_yaml(args.yolo_config)
 
+    # Create PathManager
+    paths = PathManager(Path.cwd(), pipeline_config)
+
     # Train
-    version, checkpoint_dir = train_model(pipeline_config, yolo_config, args.bootstrap)
+    version, checkpoint_dir = train_model(
+        pipeline_config,
+        yolo_config,
+        paths,
+        bootstrap=args.bootstrap,
+        from_scratch=args.from_scratch
+    )
 
     # Promote if improved
     promote_model(checkpoint_dir, Path("models/active"))

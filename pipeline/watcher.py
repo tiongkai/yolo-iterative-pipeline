@@ -121,9 +121,19 @@ class FileWatcher:
             pipeline_config = PipelineConfig.from_yaml(self.pipeline_config_path)
             yolo_config = YOLOConfig.from_yaml(self.yolo_config_path)
 
+            # Create PathManager
+            from pipeline.paths import PathManager
+            paths = PathManager(Path.cwd(), pipeline_config)
+
             # Train
             logger.info("Training started...")
-            version, checkpoint_dir = train_model(pipeline_config, yolo_config)
+            version, checkpoint_dir = train_model(
+                pipeline_config,
+                yolo_config,
+                paths,
+                bootstrap=False,
+                from_scratch=False
+            )
             logger.info(f"Training completed: {version}")
 
             # Promote if improved
