@@ -129,14 +129,15 @@ class ProcessManager:
 
             # Launch auto_move if enabled
             if not no_auto_move:
+                auto_move_script = Path.cwd() / "scripts" / "auto_move_verified.py"
                 auto_move_cmd = [
                     sys.executable,
-                    "scripts/auto_move_verified.py"
+                    str(auto_move_script)
                 ]
                 auto_move_proc = subprocess.Popen(
                     auto_move_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
+                    stdout=None,
+                    stderr=None,
                     text=True
                 )
                 self.processes.append(("auto_move", auto_move_proc))
@@ -146,8 +147,8 @@ class ProcessManager:
             watcher_cmd = ["yolo-pipeline-watch"]
             watcher_proc = subprocess.Popen(
                 watcher_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stdout=None,
+                stderr=None,
                 text=True
             )
             self.processes.append(("watcher", watcher_proc))
