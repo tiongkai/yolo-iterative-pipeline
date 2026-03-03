@@ -463,8 +463,11 @@ class PipelineValidator:
             ann_messages.extend([f"Verified: {msg}" for msg in verified_annotations.messages])
             ann_status = "error"
 
-        ann_details.update(working_annotations.details)
-        ann_details.update(verified_annotations.details)
+        # Namespace the details by directory to prevent collisions
+        if working_annotations.details:
+            ann_details["working"] = working_annotations.details
+        if verified_annotations.details:
+            ann_details["verified"] = verified_annotations.details
 
         annotations = ValidationResult(
             status=ann_status,

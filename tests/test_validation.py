@@ -418,6 +418,40 @@ def test_validate_model_pass(setup_test_structure):
     assert any("no active model" in msg.lower() for msg in result.messages)
 
 
+def test_validate_model_load_failure(setup_test_structure):
+    """Test model validation fails gracefully with corrupted model file."""
+    root = setup_test_structure
+
+    # Create invalid model file (not a real .pt file)
+    model_path = root / "models" / "active" / "best.pt"
+    model_path.write_text("corrupted data")
+
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class1"],
+        trigger_threshold=50,
+        early_trigger=25,
+        min_train_images=50,
+        eval_split_ratio=0.15,
+        stratify=True,
+        uncertainty_weight=0.4,
+        disagreement_weight=0.35,
+        diversity_weight=0.25,
+        desktop_notify=False,
+        slack_webhook=None,
+        keep_last_n_checkpoints=10
+    )
+
+    paths = PathManager(root, config)
+    validator = PipelineValidator(paths)
+
+    result = validator.validate_model()
+
+    assert result.status == "error"
+    assert any("failed to load" in msg.lower() for msg in result.messages)
+    assert result.details.get("model_path") == str(model_path)
+
+
 def test_full_health_check(setup_test_structure):
     """Test full_health_check aggregates all validation checks."""
     import yaml
