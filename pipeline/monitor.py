@@ -8,25 +8,31 @@ from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn
 
 from pipeline.metrics import load_training_history
+from pipeline.paths import PathManager
+from pipeline.config import PipelineConfig
 
 console = Console()
 
-def display_status():
-    """Display current pipeline status."""
+def display_status(paths: PathManager):
+    """Display current pipeline status.
+
+    Args:
+        paths: PathManager instance for accessing pipeline paths
+    """
     # Load training history
-    history_path = Path("logs/training_history.json")
-    history = load_training_history(history_path)
+    history = load_training_history(paths.training_history())
 
     # Count files (expects images/labels structure)
-    verified_labels = Path("data/verified/labels")
-    working_labels = Path("data/working/labels")
+    verified_labels = paths.verified_labels()
+    working_labels = paths.working_labels()
+    test_labels = paths.test_labels()
 
     verified_count = len(list(verified_labels.glob("*.txt"))) if verified_labels.exists() else 0
     working_count = len(list(working_labels.glob("*.txt"))) if working_labels.exists() else 0
-    test_count = len(list(Path("data/test/labels").glob("*.txt")))
+    test_count = len(list(test_labels.glob("*.txt"))) if test_labels.exists() else 0
 
     # Active model info
-    active_model = Path("models/active/best.pt")
+    active_model = paths.active_model()
     model_info = "No active model"
     if active_model.exists() and history:
         latest = history[-1]
@@ -44,7 +50,7 @@ def display_status():
         eval_map_delta = eval_f1_delta = 0
 
     # Pipeline status
-    lock_file = Path("logs/.training.lock")
+    lock_file = paths.training_lock()
     status = "TRAINING" if lock_file.exists() else "HEALTHY"
     status_color = "yellow" if status == "TRAINING" else "green"
 
@@ -84,7 +90,7 @@ def display_status():
     table.add_row("Pipeline Status:", f"[{status_color}]{status}[/{status_color}]")
 
     # Check watcher log for last activity
-    watcher_log = Path("logs/watcher.log")
+    watcher_log = paths.watcher_log()
     if watcher_log.exists():
         with open(watcher_log) as f:
             lines = f.readlines()
@@ -107,7 +113,7 @@ def display_status():
     console.print()
 
     # Priority queue preview
-    priority_file = Path("logs/priority_queue.txt")
+    priority_file = paths.priority_queue()
     if priority_file.exists():
         console.print("[bold]Priority Queue Preview:[/bold]")
         with open(priority_file) as f:
@@ -121,9 +127,13 @@ def display_status():
         console.print()
 
 
-def display_training_history():
-    """Display training history as table."""
-    history = load_training_history(Path("logs/training_history.json"))
+def display_training_history(paths: PathManager):
+    """Display training history as table.
+
+    Args:
+        paths: PathManager instance for accessing pipeline paths
+    """
+    history = load_training_history(paths.training_history())
 
     if not history:
         console.print("[yellow]No training history found[/yellow]")
@@ -166,14 +176,18 @@ def main():
 
     args = parser.parse_args()
 
+    # Create PathManager
+    config = PipelineConfig.from_yaml(Path.cwd() / "configs" / "pipeline_config.yaml")
+    paths = PathManager(Path.cwd(), config)
+
     if args.history:
-        display_training_history()
+        display_training_history(paths)
     else:
-        display_status()
+        display_status(paths)
 
     if args.health_check:
         # Simple health check
-        active_model = Path("models/active/best.pt")
+        active_model = paths.active_model()
         if not active_model.exists():
             console.print("[red]✗ No active model[/red]")
             exit(1)
