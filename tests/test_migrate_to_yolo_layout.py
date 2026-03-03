@@ -17,6 +17,7 @@ from migrate_to_yolo_layout import (
     validate_migration,
     migrate_directory,
     migrate_to_yolo_layout,
+    atomic_move_pair,
     MigrationError,
 )
 
@@ -321,6 +322,36 @@ class TestMigrateDirectory:
         assert stats["images_moved"] == 1
         assert stats["warnings"] > 0
 
+    def test_skips_existing_destinations(self, flat_directory):
+        """Should skip files if destination already exists."""
+        # Remove orphans to avoid warnings
+        (flat_directory / "orphan.png").unlink()
+        (flat_directory / "orphan_label.txt").unlink()
+
+        # Create YOLO directories
+        images_dir = flat_directory / "images"
+        labels_dir = flat_directory / "labels"
+        images_dir.mkdir()
+        labels_dir.mkdir()
+
+        # Pre-populate with one existing file to test skip behavior
+        (images_dir / "image_000.jpg").write_text("existing image")
+
+        stats = migrate_directory(flat_directory, force=True)
+
+        # Should skip image_000 pair (destination exists), but move others
+        assert stats["skipped"] == 1
+        assert stats["images_moved"] == 2  # image_001 and image_002 moved
+        assert stats["labels_moved"] == 2
+        # image_000 originals should still exist (not deleted due to skip)
+        assert (flat_directory / "image_000.jpg").exists()
+        assert (flat_directory / "image_000.txt").exists()
+        # Others should be moved
+        assert (images_dir / "image_001.jpg").exists()
+        assert (images_dir / "image_002.jpg").exists()
+        # Existing file should not be overwritten
+        assert (images_dir / "image_000.jpg").read_text() == "existing image"
+
 
 class TestMigrateToYoloLayout:
     """Tests for migrate_to_yolo_layout function."""
@@ -387,6 +418,122 @@ class TestMigrateToYoloLayout:
         assert not is_yolo_layout(working_dir)
         assert (working_dir / "img.jpg").exists()
         assert (working_dir / "img.txt").exists()
+
+
+class TestAtomicMovePair:
+    """Tests for atomic_move_pair function."""
+
+    def test_atomic_move_success(self, tmp_path):
+        """Should successfully move both files atomically."""
+        src_dir = tmp_path / "src"
+        dst_dir = tmp_path / "dst"
+        src_dir.mkdir()
+        dst_dir.mkdir()
+
+        # Create source files
+        label_src = src_dir / "test.txt"
+        image_src = src_dir / "test.jpg"
+        label_src.write_text("label data")
+        image_src.write_text("image data")
+
+        # Define destinations
+        label_dst = dst_dir / "test.txt"
+        image_dst = dst_dir / "test.jpg"
+
+        # Perform atomic move
+        success = atomic_move_pair(label_src, image_src, label_dst, image_dst, backup=False)
+
+        assert success
+        assert label_dst.exists()
+        assert image_dst.exists()
+        assert not label_src.exists()
+        assert not image_src.exists()
+        assert label_dst.read_text() == "label data"
+        assert image_dst.read_text() == "image data"
+
+    def test_atomic_move_backup_mode(self, tmp_path):
+        """Should copy files in backup mode."""
+        src_dir = tmp_path / "src"
+        dst_dir = tmp_path / "dst"
+        src_dir.mkdir()
+        dst_dir.mkdir()
+
+        # Create source files
+        label_src = src_dir / "test.txt"
+        image_src = src_dir / "test.jpg"
+        label_src.write_text("label data")
+        image_src.write_text("image data")
+
+        # Define destinations
+        label_dst = dst_dir / "test.txt"
+        image_dst = dst_dir / "test.jpg"
+
+        # Perform atomic copy (backup mode)
+        success = atomic_move_pair(label_src, image_src, label_dst, image_dst, backup=True)
+
+        assert success
+        assert label_dst.exists()
+        assert image_dst.exists()
+        # Originals should still exist in backup mode
+        assert label_src.exists()
+        assert image_src.exists()
+
+    def test_atomic_move_rollback_on_missing_source(self, tmp_path):
+        """Should fail gracefully if source file doesn't exist."""
+        src_dir = tmp_path / "src"
+        dst_dir = tmp_path / "dst"
+        src_dir.mkdir()
+        dst_dir.mkdir()
+
+        # Create only label source (missing image)
+        label_src = src_dir / "test.txt"
+        image_src = src_dir / "test.jpg"  # Does not exist
+        label_src.write_text("label data")
+
+        # Define destinations
+        label_dst = dst_dir / "test.txt"
+        image_dst = dst_dir / "test.jpg"
+
+        # Attempt atomic move (should fail due to missing image)
+        success = atomic_move_pair(label_src, image_src, label_dst, image_dst, backup=False)
+
+        assert not success
+        # Original label should still exist (rollback behavior)
+        assert label_src.exists()
+        # Destinations should not exist
+        assert not label_dst.exists()
+        assert not image_dst.exists()
+        # No .tmp files should remain
+        tmp_files = list(dst_dir.glob("*.tmp"))
+        assert len(tmp_files) == 0
+
+    def test_atomic_move_handles_partial_failure(self, tmp_path):
+        """Should handle case where one file exists in destination."""
+        src_dir = tmp_path / "src"
+        dst_dir = tmp_path / "dst"
+        src_dir.mkdir()
+        dst_dir.mkdir()
+
+        # Create source files
+        label_src = src_dir / "test.txt"
+        image_src = src_dir / "test.jpg"
+        label_src.write_text("label data")
+        image_src.write_text("image data")
+
+        # Create existing destination (label)
+        label_dst = dst_dir / "test.txt"
+        image_dst = dst_dir / "test.jpg"
+        label_dst.write_text("existing label")
+
+        # Attempt atomic move
+        # Note: atomic_move_pair doesn't check for existing files (that's migrate_directory's job)
+        # So this will overwrite. That's expected - the check happens at a higher level.
+        success = atomic_move_pair(label_src, image_src, label_dst, image_dst, backup=False)
+
+        # Should succeed (overwrites are allowed at this level)
+        assert success
+        assert label_dst.read_text() == "label data"
+        assert image_dst.read_text() == "image data"
 
 
 class TestEdgeCases:

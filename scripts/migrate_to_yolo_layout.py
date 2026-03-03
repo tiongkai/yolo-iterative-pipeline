@@ -20,6 +20,7 @@ New structure (YOLO):
 """
 
 import argparse
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, List, Set
@@ -78,6 +79,104 @@ def get_file_pairs(directory: Path) -> Dict[str, Dict[str, Path]]:
             pairs[stem]["label"] = file_path
 
     return pairs
+
+
+def atomic_move_pair(
+    label_src: Path,
+    image_src: Path,
+    label_dst: Path,
+    image_dst: Path,
+    backup: bool = False
+) -> bool:
+    """Atomically move label and image pair.
+
+    Uses copy-then-rename pattern to ensure both files move together or neither moves.
+    Prevents orphaned files if one operation fails.
+
+    Steps:
+    1. Copy both files (with .tmp extension if not backup)
+    2. Verify both copies exist
+    3. Atomic rename (os.rename is atomic on POSIX)
+    4. Delete originals only after both renames succeed
+
+    Args:
+        label_src: Source path for label file
+        image_src: Source path for image file
+        label_dst: Destination path for label file
+        image_dst: Destination path for image file
+        backup: If True, copy files instead of moving
+
+    Returns:
+        True if successful, False if failed
+    """
+    label_renamed = False
+    image_renamed = False
+    label_tmp = None
+    image_tmp = None
+
+    try:
+        if backup:
+            # Backup mode: just copy with metadata
+            shutil.copy2(str(label_src), str(label_dst))
+            shutil.copy2(str(image_src), str(image_dst))
+        else:
+            # Move mode: copy-then-rename for atomicity
+            label_tmp = label_dst.parent / f"{label_dst.name}.tmp"
+            image_tmp = image_dst.parent / f"{image_dst.name}.tmp"
+
+            # Step 1: Copy both files
+            shutil.copy2(str(label_src), str(label_tmp))
+            shutil.copy2(str(image_src), str(image_tmp))
+
+            # Step 2: Verify both copies exist
+            if not label_tmp.exists() or not image_tmp.exists():
+                raise IOError("Copy verification failed")
+
+            # Step 3: Atomic rename (atomic on POSIX systems)
+            os.rename(str(label_tmp), str(label_dst))
+            label_renamed = True
+
+            os.rename(str(image_tmp), str(image_dst))
+            image_renamed = True
+
+            # Step 4: Delete originals only after both renames succeed
+            label_src.unlink()
+            image_src.unlink()
+
+        return True
+
+    except Exception as e:
+        # Rollback based on what succeeded
+        if label_renamed:
+            # Label was moved, move it back
+            try:
+                if label_dst.exists():
+                    os.rename(str(label_dst), str(label_tmp))
+            except Exception:
+                pass  # Best effort rollback
+
+        if image_renamed:
+            # Image was moved, move it back
+            try:
+                if image_dst.exists():
+                    os.rename(str(image_dst), str(image_tmp))
+            except Exception:
+                pass  # Best effort rollback
+
+        # Clean up .tmp files (best effort - may fail due to permissions)
+        if label_tmp:
+            try:
+                label_tmp.unlink()
+            except Exception:
+                pass  # Best effort cleanup
+
+        if image_tmp:
+            try:
+                image_tmp.unlink()
+            except Exception:
+                pass  # Best effort cleanup
+
+        return False
 
 
 def validate_migration(directory: Path, pairs: Dict[str, Dict[str, Path]]) -> List[str]:
@@ -149,13 +248,14 @@ def migrate_directory(
         print(f"⚠️  Not a directory: {directory}")
         return stats
 
-    # Check if already in YOLO layout
-    if is_yolo_layout(directory):
+    # Get file pairs first
+    pairs = get_file_pairs(directory)
+
+    # Check if already in YOLO layout AND no flat files to migrate
+    if is_yolo_layout(directory) and not pairs:
         print(f"✓ Already in YOLO layout: {directory}")
         return stats
 
-    # Get file pairs
-    pairs = get_file_pairs(directory)
     if not pairs:
         print(f"ℹ️  No files to migrate in: {directory}")
         return stats
@@ -189,40 +289,85 @@ def migrate_directory(
         print(f"   Created: {images_dir}")
         print(f"   Created: {labels_dir}")
 
-    # Move files
+    # Move files atomically
     operation = "copy" if backup else "move"
     action = "Would copy" if dry_run else "Copying" if backup else "Moving"
+    stats["skipped"] = 0
 
     for stem, files in pairs.items():
-        # Move image
-        if "image" in files:
-            src = files["image"]
-            dst = images_dir / src.name
-            try:
-                if not dry_run:
-                    if backup:
-                        shutil.copy2(src, dst)
-                    else:
-                        src.rename(dst)
-                stats["images_moved"] += 1
-            except Exception as e:
-                print(f"   ❌ Error {operation}ing {src.name}: {e}")
-                stats["errors"] += 1
+        # Check if this is a complete pair (both image and label)
+        has_image = "image" in files
+        has_label = "label" in files
 
-        # Move label
-        if "label" in files:
-            src = files["label"]
-            dst = labels_dir / src.name
-            try:
-                if not dry_run:
-                    if backup:
-                        shutil.copy2(src, dst)
-                    else:
-                        src.rename(dst)
+        if has_image and has_label:
+            # Complete pair - use atomic move
+            image_src = files["image"]
+            label_src = files["label"]
+            image_dst = images_dir / image_src.name
+            label_dst = labels_dir / label_src.name
+
+            # Check if destination exists (prevent overwrites)
+            if not dry_run and (image_dst.exists() or label_dst.exists()):
+                print(f"   ⚠️  Destination exists, skipping: {stem}")
+                stats["skipped"] += 1
+                continue
+
+            if not dry_run:
+                success = atomic_move_pair(label_src, image_src, label_dst, image_dst, backup)
+                if success:
+                    stats["images_moved"] += 1
+                    stats["labels_moved"] += 1
+                else:
+                    print(f"   ❌ Error {operation}ing pair: {stem}")
+                    stats["errors"] += 1
+            else:
+                # Dry run - just count
+                stats["images_moved"] += 1
                 stats["labels_moved"] += 1
-            except Exception as e:
-                print(f"   ❌ Error {operation}ing {src.name}: {e}")
-                stats["errors"] += 1
+
+        else:
+            # Orphaned file - handle individually
+            if has_image:
+                src = files["image"]
+                dst = images_dir / src.name
+
+                # Check if destination exists
+                if not dry_run and dst.exists():
+                    print(f"   ⚠️  Destination exists, skipping: {src.name}")
+                    stats["skipped"] += 1
+                    continue
+
+                try:
+                    if not dry_run:
+                        if backup:
+                            shutil.copy2(str(src), str(dst))
+                        else:
+                            shutil.move(str(src), str(dst))
+                    stats["images_moved"] += 1
+                except Exception as e:
+                    print(f"   ❌ Error {operation}ing {src.name}: {e}")
+                    stats["errors"] += 1
+
+            if has_label:
+                src = files["label"]
+                dst = labels_dir / src.name
+
+                # Check if destination exists
+                if not dry_run and dst.exists():
+                    print(f"   ⚠️  Destination exists, skipping: {src.name}")
+                    stats["skipped"] += 1
+                    continue
+
+                try:
+                    if not dry_run:
+                        if backup:
+                            shutil.copy2(str(src), str(dst))
+                        else:
+                            shutil.move(str(src), str(dst))
+                    stats["labels_moved"] += 1
+                except Exception as e:
+                    print(f"   ❌ Error {operation}ing {src.name}: {e}")
+                    stats["errors"] += 1
 
     # Print summary
     verb = "Would " + operation if dry_run else operation.capitalize() + "d"
