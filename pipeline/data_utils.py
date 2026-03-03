@@ -146,8 +146,7 @@ def get_class_distribution(label_files: List[Path]) -> Dict[int, int]:
 
 
 def sample_eval_set(
-    verified_dir: Path,
-    eval_dir: Path,
+    paths: 'PathManager',
     split_ratio: float = 0.15,
     stratify: bool = True,
     num_classes: Optional[int] = None,
@@ -156,8 +155,7 @@ def sample_eval_set(
     """Sample eval set from verified annotations.
 
     Args:
-        verified_dir: Directory with verified annotations
-        eval_dir: Destination directory for eval set
+        paths: PathManager instance for directory access
         split_ratio: Fraction to sample (0.15 = 15%)
         stratify: Whether to stratify by class
         num_classes: Number of classes (for stratification)
@@ -169,13 +167,15 @@ def sample_eval_set(
     # Input validation
     if not 0 < split_ratio < 1:
         raise ValueError(f"split_ratio must be between 0 and 1, got {split_ratio}")
+
+    verified_dir = paths.verified_dir()
     if not verified_dir.exists():
         raise FileNotFoundError(f"Directory does not exist: {verified_dir}")
 
     random.seed(random_seed)
 
-    # Get all label files (expects verified/labels/*.txt structure)
-    labels_dir = verified_dir / 'labels'
+    # Get all label files (YOLO structure: verified/labels/*.txt)
+    labels_dir = paths.verified_labels()
     if not labels_dir.exists():
         raise FileNotFoundError(f"Labels directory not found: {labels_dir}")
 
@@ -230,13 +230,13 @@ def sample_eval_set(
         # Simple random sampling
         sampled = random.sample(label_files, n_samples)
 
-    # Move sampled files to eval directory (with images/labels structure)
-    eval_labels_dir = eval_dir / 'labels'
-    eval_images_dir = eval_dir / 'images'
+    # Move sampled files to eval directory (YOLO structure: eval/images and eval/labels)
+    eval_labels_dir = paths.eval_labels()
+    eval_images_dir = paths.eval_images()
     eval_labels_dir.mkdir(parents=True, exist_ok=True)
     eval_images_dir.mkdir(parents=True, exist_ok=True)
 
-    images_dir = verified_dir / 'images'
+    images_dir = paths.verified_images()
     if not images_dir.exists():
         raise FileNotFoundError(f"Images directory not found: {images_dir}")
 

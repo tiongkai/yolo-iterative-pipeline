@@ -8,6 +8,8 @@ from pipeline.data_utils import (
     get_class_distribution,
     sample_eval_set,
 )
+from pipeline.paths import PathManager
+from pipeline.config import PipelineConfig
 
 def test_validate_yolo_annotation_valid():
     """Test validation of correct YOLO annotation."""
@@ -70,7 +72,8 @@ def test_sample_eval_set_stratified(tmp_path):
     verified/images/*.jpg and verified/labels/*.txt
     """
     # Create dummy data with YOLO structure
-    verified_dir = tmp_path / "verified"
+    data_dir = tmp_path / "data"
+    verified_dir = data_dir / "verified"
     verified_labels = verified_dir / "labels"
     verified_images = verified_dir / "images"
     verified_labels.mkdir(parents=True)
@@ -87,12 +90,18 @@ def test_sample_eval_set_stratified(tmp_path):
         img_file = verified_images / f"img_{i:03d}.jpg"
         img_file.touch()  # Create dummy image file
 
-    eval_dir = tmp_path / "eval"
+    eval_dir = data_dir / "eval"
     eval_dir.mkdir()
 
+    # Create PathManager instance
+    config = PipelineConfig(
+        project_name="test",
+        classes=["class0", "class1", "class2"]
+    )
+    paths = PathManager(root_dir=tmp_path, config=config)
+
     sampled = sample_eval_set(
-        verified_dir=verified_dir,
-        eval_dir=eval_dir,
+        paths=paths,
         split_ratio=0.15,
         stratify=True,
         num_classes=3
@@ -118,20 +127,26 @@ def test_sample_eval_set_stratified(tmp_path):
         img_file = eval_images / f"{lf.stem}.jpg"
         assert img_file.exists(), f"Image file not moved for {lf.name}"
 
-def test_sample_eval_set_invalid_split_ratio():
+def test_sample_eval_set_invalid_split_ratio(tmp_path):
     """Test validation of invalid split_ratio."""
+    # Create minimal PathManager
+    config = PipelineConfig(project_name="test", classes=["class0", "class1", "class2"])
+    paths = PathManager(root_dir=tmp_path, config=config)
+
     with pytest.raises(ValueError, match="split_ratio must be between 0 and 1"):
         sample_eval_set(
-            verified_dir=Path("dummy"),
-            eval_dir=Path("dummy"),
+            paths=paths,
             split_ratio=1.5
         )
 
-def test_sample_eval_set_nonexistent_dir():
+def test_sample_eval_set_nonexistent_dir(tmp_path):
     """Test validation of non-existent directory."""
+    # Create PathManager with non-existent verified directory
+    config = PipelineConfig(project_name="test", classes=["class0", "class1", "class2"])
+    paths = PathManager(root_dir=tmp_path, config=config)
+
     with pytest.raises(FileNotFoundError, match="Directory does not exist"):
         sample_eval_set(
-            verified_dir=Path("/nonexistent/path"),
-            eval_dir=Path("dummy"),
+            paths=paths,
             split_ratio=0.15
         )
