@@ -301,10 +301,12 @@ class PipelineValidator:
                                 invalid_format.append(
                                     f"{label_file.name}:{line_num} (class_id {class_id} out of range [0-{num_classes-1}])"
                                 )
+                                continue
                         except ValueError:
                             invalid_format.append(
                                 f"{label_file.name}:{line_num} (invalid class_id: {parts[0]})"
                             )
+                            continue
 
                         # Validate coordinates
                         try:
@@ -314,6 +316,12 @@ class PipelineValidator:
                                     invalid_format.append(
                                         f"{label_file.name}:{line_num} (coordinate {i+1} out of range [0,1]: {coord})"
                                     )
+
+                            # Validate width and height (coords[2] and coords[3]) are positive
+                            if len(coords) == 4 and (coords[2] <= 0 or coords[3] <= 0):
+                                invalid_format.append(
+                                    f"{label_file.name}:{line_num} (width/height must be > 0, got {coords[2]}, {coords[3]})"
+                                )
                         except ValueError:
                             invalid_format.append(
                                 f"{label_file.name}:{line_num} (invalid coordinate values)"
