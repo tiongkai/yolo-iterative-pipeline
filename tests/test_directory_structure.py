@@ -7,25 +7,50 @@ import tempfile
 
 from pipeline.watcher import FileWatcher
 from pipeline.data_utils import sample_eval_set
+from pipeline.paths import PathManager
+from pipeline.config import PipelineConfig
 
 
 def test_watcher_counts_correct_directory(tmp_path):
     """Test that watcher counts files in verified/labels/."""
     # Setup directory structure
-    verified_dir = tmp_path / "verified"
+    verified_dir = tmp_path / "data" / "verified"
     labels_dir = verified_dir / "labels"
     images_dir = verified_dir / "images"
     labels_dir.mkdir(parents=True)
     images_dir.mkdir(parents=True)
+
+    # Create required dirs for PathManager validation
+    (tmp_path / "data" / "working" / "images").mkdir(parents=True)
+    (tmp_path / "data" / "working" / "labels").mkdir(parents=True)
+    (tmp_path / "data" / "eval" / "images").mkdir(parents=True)
+    (tmp_path / "data" / "eval" / "labels").mkdir(parents=True)
+    (tmp_path / "data" / "test" / "images").mkdir(parents=True)
+    (tmp_path / "data" / "test" / "labels").mkdir(parents=True)
+    (tmp_path / "data" / "sam3_annotations").mkdir(parents=True)
+    (tmp_path / "data" / "splits").mkdir(parents=True)
+    (tmp_path / "models" / "active").mkdir(parents=True)
+    (tmp_path / "models" / "checkpoints").mkdir(parents=True)
+    (tmp_path / "models" / "deployed").mkdir(parents=True)
+    (tmp_path / "configs").mkdir(parents=True)
+    (tmp_path / "logs").mkdir(parents=True)
 
     # Create test files
     for i in range(5):
         (labels_dir / f"image{i}.txt").write_text("0 0.5 0.5 0.1 0.1")
         (images_dir / f"image{i}.png").touch()
 
+    # Create config and PathManager
+    config = PipelineConfig(
+        project_name="test_project",
+        classes=["boat"],
+        trigger_threshold=50
+    )
+    paths = PathManager(tmp_path, config)
+
     # Test watcher counts correctly
     watcher = FileWatcher(
-        verified_dir=verified_dir,
+        paths=paths,
         trigger_threshold=50  # Default threshold
     )
     count = watcher.count_verified_images()

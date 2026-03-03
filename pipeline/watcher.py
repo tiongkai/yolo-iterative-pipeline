@@ -1,4 +1,5 @@
 # pipeline/watcher.py
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -8,18 +9,8 @@ from pipeline.config import PipelineConfig, YOLOConfig
 from pipeline.train import train_model, promote_model
 from pipeline.active_learning import score_all_images, save_priority_queue
 from pipeline.paths import PathManager
+from pipeline.validation import PipelineValidator
 
-# Ensure logs directory exists before setting up logging
-Path("logs").mkdir(parents=True, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    handlers=[
-        logging.FileHandler('logs/watcher.log'),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
 
 
@@ -52,12 +43,12 @@ class FileWatcher:
 
     def __init__(
         self,
-        verified_dir: Path,
+        paths: PathManager,
         trigger_threshold: int,
         pipeline_config_path: Optional[Path] = None,
         yolo_config_path: Optional[Path] = None,
     ):
-        self.verified_dir = verified_dir
+        self.paths = paths
         self.trigger_threshold = trigger_threshold
         self.pipeline_config_path = pipeline_config_path or Path("configs/pipeline_config.yaml")
         self.yolo_config_path = yolo_config_path or Path("configs/yolo_config.yaml")
@@ -65,7 +56,20 @@ class FileWatcher:
         self.last_train_count = 0
         self.iteration = 0
         self.is_training = False
-        self.lock_file = Path("logs/.training.lock")
+        self.lock_file = self.paths.logs_dir() / ".training.lock"
+
+        # Validate pipeline structure on startup
+        validator = PipelineValidator(self.paths)
+        result = validator.validate_structure()
+        if result.is_error():
+            logger.error("❌ Pipeline structure validation failed:")
+            for msg in result.messages:
+                logger.error(f"   {msg}")
+            sys.exit(1)
+        elif result.is_warning():
+            logger.warning("⚠️  Pipeline structure validation warnings:")
+            for msg in result.messages:
+                logger.warning(f"   {msg}")
 
     def count_verified_images(self) -> int:
         """
@@ -73,7 +77,7 @@ class FileWatcher:
 
         Expects structure: verified/labels/*.txt
         """
-        labels_dir = self.verified_dir / 'labels'
+        labels_dir = self.paths.verified_labels()
         if not labels_dir.exists():
             return 0
         return len(list(labels_dir.glob("*.txt")))
@@ -122,36 +126,31 @@ class FileWatcher:
             pipeline_config = PipelineConfig.from_yaml(self.pipeline_config_path)
             yolo_config = YOLOConfig.from_yaml(self.yolo_config_path)
 
-            # Create PathManager
-            paths = PathManager(Path.cwd(), pipeline_config)
-
             # Train
             logger.info("Training started...")
             version, checkpoint_dir = train_model(
                 pipeline_config,
                 yolo_config,
-                paths,
+                self.paths,
                 bootstrap=False,
                 from_scratch=False
             )
             logger.info(f"Training completed: {version}")
 
             # Promote if improved
-            promoted = promote_model(checkpoint_dir, paths.active_model().parent, paths)
+            promoted = promote_model(checkpoint_dir, self.paths.active_model().parent, self.paths)
 
             if promoted:
                 # Re-score priority queue
                 logger.info("Re-scoring priority queue...")
-                # TODO: These paths should be configurable via PipelineConfig
-                # Currently hardcoded for consistency with train.py patterns
                 scores = score_all_images(
-                    working_dir=Path("data/working"),
-                    sam3_dir=Path("data/sam3_annotations"),
-                    model_path=Path("models/active/best.pt")
+                    working_dir=self.paths.working_dir(),
+                    sam3_dir=self.paths.sam3_dir(),
+                    model_path=self.paths.active_model()
                 )
                 save_priority_queue(
                     scores,
-                    Path("logs/priority_queue.txt"),
+                    self.paths.priority_queue(),
                     version
                 )
                 logger.info(f"Priority queue updated ({len(scores)} images)")
@@ -185,7 +184,7 @@ class FileWatcher:
         Args:
             check_interval: Seconds between checks
         """
-        logger.info(f"File watcher started, monitoring {self.verified_dir}")
+        logger.info(f"File watcher started, monitoring {self.paths.verified_dir()}")
         logger.info(f"Trigger threshold: {self.trigger_threshold} images")
 
         try:
@@ -201,7 +200,6 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Watch verified directory and trigger training")
-    parser.add_argument("--verified-dir", type=Path, default="data/verified")
     parser.add_argument("--config", type=Path, default="configs/pipeline_config.yaml")
     parser.add_argument("--yolo-config", type=Path, default="configs/yolo_config.yaml")
     parser.add_argument("--interval", type=int, default=60,
@@ -212,8 +210,22 @@ def main():
     # Load config for trigger threshold
     pipeline_config = PipelineConfig.from_yaml(args.config)
 
+    # Create PathManager
+    paths = PathManager(Path.cwd(), pipeline_config)
+
+    # Set up logging after we have paths
+    paths.logs_dir().mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s: %(message)s',
+        handlers=[
+            logging.FileHandler(paths.watcher_log()),
+            logging.StreamHandler()
+        ]
+    )
+
     watcher = FileWatcher(
-        verified_dir=args.verified_dir,
+        paths=paths,
         trigger_threshold=pipeline_config.trigger_threshold,
         pipeline_config_path=args.config,
         yolo_config_path=args.yolo_config
