@@ -136,6 +136,10 @@ class PathManager:
         """Get auto-move log file path."""
         return self.logs_dir() / "auto_move.log"
 
+    def training_lock(self) -> Path:
+        """Get training lock file path."""
+        return self.logs_dir() / ".training.lock"
+
     def priority_queue(self) -> Path:
         """Get priority queue file path."""
         return self.logs_dir() / "priority_queue.txt"

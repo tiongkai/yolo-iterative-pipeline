@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -102,9 +103,8 @@ def display_status(paths: PathManager):
                     table.add_row("  File Watcher:", "[yellow]Unknown[/yellow]")
 
     if history:
-        import datetime
-        last_train_time = datetime.datetime.fromisoformat(history[-1]['timestamp'])
-        time_since = datetime.datetime.now() - last_train_time
+        last_train_time = datetime.fromisoformat(history[-1]['timestamp'])
+        time_since = datetime.now() - last_train_time
         hours = time_since.total_seconds() / 3600
         table.add_row("  Last Training:", f"{hours:.1f} hours ago")
 

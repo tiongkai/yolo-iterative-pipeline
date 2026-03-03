@@ -174,4 +174,5 @@ def test_path_manager_config_and_log_paths(tmp_path):
     assert paths.training_history() == tmp_path / "logs" / "training_history.json"
     assert paths.watcher_log() == tmp_path / "logs" / "watcher.log"
     assert paths.auto_move_log() == tmp_path / "logs" / "auto_move.log"
+    assert paths.training_lock() == tmp_path / "logs" / ".training.lock"
     assert paths.priority_queue() == tmp_path / "logs" / "priority_queue.txt"
