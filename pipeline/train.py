@@ -49,10 +49,15 @@ def init_model(
         try:
             print(f"Loading active model from {active_model_path.name}...")
             model = YOLO(str(active_model_path))
+
+            # Verify model is valid
+            if not hasattr(model, 'model') or model.model is None:
+                raise ValueError("Loaded model is invalid or uninitialized")
+
             print(f"✓ Resuming from active model (version {active_model_path.parent.parent.name})")
             return model, "active"
         except Exception as e:
-            print(f"⚠ Failed to load active model: {e}")
+            print(f"⚠ Failed to load active model ({type(e).__name__}): {e}")
             print(f"  Falling back to pretrained model...")
     elif from_scratch:
         print(f"🔄 Training from scratch (--from-scratch flag set)")

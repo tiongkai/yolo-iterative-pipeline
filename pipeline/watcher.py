@@ -7,6 +7,7 @@ import logging
 from pipeline.config import PipelineConfig, YOLOConfig
 from pipeline.train import train_model, promote_model
 from pipeline.active_learning import score_all_images, save_priority_queue
+from pipeline.paths import PathManager
 
 # Ensure logs directory exists before setting up logging
 Path("logs").mkdir(parents=True, exist_ok=True)
@@ -122,7 +123,6 @@ class FileWatcher:
             yolo_config = YOLOConfig.from_yaml(self.yolo_config_path)
 
             # Create PathManager
-            from pipeline.paths import PathManager
             paths = PathManager(Path.cwd(), pipeline_config)
 
             # Train
