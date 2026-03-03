@@ -64,20 +64,27 @@ def test_get_image_label_pairs(tmp_path):
     assert pairs[0] == (img_file, label_file)
 
 def test_sample_eval_set_stratified(tmp_path):
-    """Test stratified sampling of eval set."""
-    # Create dummy data
+    """Test stratified sampling of eval set.
+
+    Note: sample_eval_set() expects YOLO directory structure:
+    verified/images/*.jpg and verified/labels/*.txt
+    """
+    # Create dummy data with YOLO structure
     verified_dir = tmp_path / "verified"
-    verified_dir.mkdir()
+    verified_labels = verified_dir / "labels"
+    verified_images = verified_dir / "images"
+    verified_labels.mkdir(parents=True)
+    verified_images.mkdir(parents=True)
 
     # Create annotations with different classes
     for i in range(100):
-        label_file = verified_dir / f"img_{i:03d}.txt"
+        label_file = verified_labels / f"img_{i:03d}.txt"
         class_id = i % 3  # 3 classes
         label_file.write_text(f"{class_id} 0.5 0.5 0.2 0.3\n", encoding='utf-8')
 
     # Create corresponding image files
     for i in range(100):
-        img_file = verified_dir / f"img_{i:03d}.jpg"
+        img_file = verified_images / f"img_{i:03d}.jpg"
         img_file.touch()  # Create dummy image file
 
     eval_dir = tmp_path / "eval"
@@ -93,9 +100,10 @@ def test_sample_eval_set_stratified(tmp_path):
 
     assert len(sampled) == 15  # 15% of 100
 
-    # Verify stratification - count classes in eval set
+    # Verify stratification - count classes in eval set (YOLO structure)
+    eval_labels = eval_dir / "labels"
     class_dist = {}
-    for lf in eval_dir.glob("*.txt"):
+    for lf in eval_labels.glob("*.txt"):
         cid = int(lf.read_text().split()[0])
         class_dist[cid] = class_dist.get(cid, 0) + 1
 
@@ -104,9 +112,10 @@ def test_sample_eval_set_stratified(tmp_path):
     for cid in range(3):
         assert 3 <= class_dist.get(cid, 0) <= 7
 
-    # Verify image files were also moved
-    for lf in eval_dir.glob("*.txt"):
-        img_file = eval_dir / f"{lf.stem}.jpg"
+    # Verify image files were also moved (YOLO structure)
+    eval_images = eval_dir / "images"
+    for lf in eval_labels.glob("*.txt"):
+        img_file = eval_images / f"{lf.stem}.jpg"
         assert img_file.exists(), f"Image file not moved for {lf.name}"
 
 def test_sample_eval_set_invalid_split_ratio():
