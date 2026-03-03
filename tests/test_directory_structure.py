@@ -61,8 +61,9 @@ def test_watcher_counts_correct_directory(tmp_path):
 def test_sample_eval_set_with_structure(tmp_path):
     """Test that eval sampling works with images/labels structure."""
     # Setup directory structure
-    verified_dir = tmp_path / "verified"
-    eval_dir = tmp_path / "eval"
+    data_dir = tmp_path / "data"
+    verified_dir = data_dir / "verified"
+    eval_dir = data_dir / "eval"
     labels_dir = verified_dir / "labels"
     images_dir = verified_dir / "images"
     labels_dir.mkdir(parents=True)
@@ -73,10 +74,20 @@ def test_sample_eval_set_with_structure(tmp_path):
         (labels_dir / f"image{i}.txt").write_text("0 0.5 0.5 0.1 0.1")
         (images_dir / f"image{i}.png").touch()
 
+    # Create PathManager instance
+    from pipeline.paths import PathManager
+    from pipeline.config import PipelineConfig
+
+    config = PipelineConfig(
+        project_name="test_project",
+        classes=["test"],
+        trigger_threshold=50
+    )
+    paths = PathManager(tmp_path, config)
+
     # Sample eval set
     sampled = sample_eval_set(
-        verified_dir=verified_dir,
-        eval_dir=eval_dir,
+        paths=paths,
         split_ratio=0.3,
         stratify=False,
         num_classes=1
