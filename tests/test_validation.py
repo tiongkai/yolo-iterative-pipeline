@@ -82,3 +82,43 @@ def test_health_report_is_healthy():
         overall_status="errors"
     )
     assert errors.is_healthy() is False
+
+
+def test_validation_result_invalid_status():
+    """Test ValidationResult rejects invalid status values."""
+    with pytest.raises(ValueError, match="Invalid status"):
+        ValidationResult(
+            status="invalid",
+            messages=[],
+            details={}
+        )
+
+
+def test_validation_result_helper_methods():
+    """Test ValidationResult helper methods."""
+    pass_result = ValidationResult("pass", [], {})
+    assert pass_result.is_pass() is True
+    assert pass_result.is_warning() is False
+    assert pass_result.is_error() is False
+
+    warning_result = ValidationResult("warning", ["warning msg"], {})
+    assert warning_result.is_pass() is False
+    assert warning_result.is_warning() is True
+    assert warning_result.is_error() is False
+
+    error_result = ValidationResult("error", ["error msg"], {})
+    assert error_result.is_pass() is False
+    assert error_result.is_warning() is False
+    assert error_result.is_error() is True
+
+
+def test_health_report_invalid_overall_status():
+    """Test HealthReport rejects invalid overall_status values."""
+    with pytest.raises(ValueError, match="Invalid overall_status"):
+        HealthReport(
+            structure=ValidationResult("pass", [], {}),
+            config=ValidationResult("pass", [], {}),
+            annotations=ValidationResult("pass", [], {}),
+            models=ValidationResult("pass", [], {}),
+            overall_status="invalid"
+        )

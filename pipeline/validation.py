@@ -22,6 +22,26 @@ class ValidationResult:
     messages: List[str]
     details: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        """Validate status value."""
+        if self.status not in ["pass", "warning", "error"]:
+            raise ValueError(
+                f"Invalid status: {self.status}. "
+                f"Must be 'pass', 'warning', or 'error'"
+            )
+
+    def is_error(self) -> bool:
+        """Check if validation failed with errors."""
+        return self.status == "error"
+
+    def is_warning(self) -> bool:
+        """Check if validation passed with warnings."""
+        return self.status == "warning"
+
+    def is_pass(self) -> bool:
+        """Check if validation passed without issues."""
+        return self.status == "pass"
+
 
 @dataclass
 class HealthReport:
@@ -39,6 +59,14 @@ class HealthReport:
     annotations: ValidationResult
     models: ValidationResult
     overall_status: str  # "healthy", "warnings", "errors"
+
+    def __post_init__(self):
+        """Validate overall_status value."""
+        if self.overall_status not in ["healthy", "warnings", "errors"]:
+            raise ValueError(
+                f"Invalid overall_status: {self.overall_status}. "
+                f"Must be 'healthy', 'warnings', or 'errors'"
+            )
 
     def is_healthy(self) -> bool:
         """Check if pipeline is healthy enough to run.
