@@ -68,9 +68,9 @@ python scripts/auto_move_verified.py
 - **Checks verified flag** in JSON (`flags.verified == true`)
 - Waits 60s after JSON modification for stability
 - Converts JSON annotations → YOLO format
-- Moves image to `data/verified/images/`
+- **Copies** image to `data/verified/images/` (original stays in working/)
 - Creates YOLO label in `data/verified/labels/`
-- Leaves JSON in `working/images/` (for X-AnyLabeling)
+- Leaves JSON and image in `working/images/` (for continued annotation)
 
 **How it ensures manual verification:**
 1. You review image in X-AnyLabeling
@@ -155,18 +155,18 @@ When X-AnyLabeling opens:
 └──────────────────────────────────────────────────────────┘
                          ↓
 ┌──────────────────────────────────────────────────────────┐
-│ 2. AUTOMATIC MOVEMENT (Terminal 1)                      │
+│ 2. AUTOMATIC COPYING (Terminal 1)                       │
 │    - Monitors data/working/images/*.json every 60s      │
 │    - Checks for flags.verified == true in JSON          │
 │    - Waits 60s after JSON modification for stability    │
 │    - Converts JSON annotations → YOLO format            │
-│    - Moves image → data/verified/images/                │
+│    - COPIES image → data/verified/images/               │
 │    - Creates YOLO label → data/verified/labels/         │
-│    - Leaves JSON in working/images/ (for X-AnyLabeling) │
+│    - Keeps JSON + image in working/images/ (continue!)  │
 │    - Logs in verification tracker as "verified"         │
 │                                                          │
 │    ✅ Verified flag ensures ONLY manually reviewed      │
-│       files are moved!                                  │
+│       files are copied for training!                    │
 └──────────────────────────────────────────────────────────┘
                          ↓
 ┌──────────────────────────────────────────────────────────┐

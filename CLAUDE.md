@@ -69,17 +69,18 @@ Priority score = 0.40×uncertainty + 0.35×disagreement + 0.25×diversity
    - Reviews and corrects annotations
    - Presses **Space** to mark as verified (sets `flags.verified: true` in JSON)
    - Saves with Ctrl+S
-2. Auto-move script (`scripts/auto_move_verified.py`) watches working/images/*.json
+2. Auto-copy script (`scripts/auto_move_verified.py`) watches working/images/*.json
    - Checks for `flags.verified == true` in X-AnyLabeling JSON
    - Waits 60s for file stability
    - Converts JSON annotations → YOLO format
-   - Moves image to data/verified/images/
+   - **Copies** image to data/verified/images/ (original stays in working/)
    - Creates YOLO label in data/verified/labels/
+   - User can continue annotating in working/
 3. Training watcher (`yolo-pipeline-watch`) monitors verified/
 4. After 50 verified images → training auto-triggers
 5. New model promoted to models/active/best.pt (if improved)
 6. User reloads model in X-AnyLabeling (AI → Load Model)
-7. Repeat with better predictions
+7. Continue annotating with better predictions
 
 **Alternative Workflows:**
 - **Option B (Manual)**: Use `./scripts/move_verified.sh` to manually move batches

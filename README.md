@@ -183,14 +183,14 @@ x-anylabeling  # Open Dir: data/verified/ (save directly)
    - Press Space to mark as verified
    - Save (Ctrl+S), move to next image (D key)
    ↓
-2. Auto-move script monitors (Terminal 1)
+2. Auto-copy script monitors (Terminal 1)
    - Monitors data/working/images/*.json files
    - Checks flags.verified == true in JSON
    - Waits 60s after JSON modification for stability
    - Converts JSON annotations → YOLO format
-   - Moves image → data/verified/images/
+   - COPIES image → data/verified/images/ (original stays in working/)
    - Creates YOLO label → data/verified/labels/
-   - Leaves JSON in working/images/ (for X-AnyLabeling)
+   - Keeps JSON + image in working/images/ (continue annotating!)
    - Logs in verification tracker as "verified"
    ↓
 3. Training watcher counts files → triggers at 50 images
@@ -261,10 +261,11 @@ yolo-pipeline-doctor
 # View setup instructions for 4-terminal workflow
 ./scripts/start_pipeline.sh
 
-# Automatic file movement (JSON-based verification)
+# Automatic file copying (JSON-based verification)
 # Monitors working/images/*.json for verified flag
 # Checks flags.verified == true, converts JSON → YOLO format
-# Moves image to verified/images/, creates label in verified/labels/
+# COPIES image to verified/images/ (keeps original in working/)
+# Creates label in verified/labels/
 # Requires: data/verified/classes.txt for class mapping
 python scripts/auto_move_verified.py [--interval 60] [--stability 60]
 
