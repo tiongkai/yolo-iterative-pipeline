@@ -274,9 +274,21 @@ class PipelineValidator:
                 details=details
             )
 
+        # Load classes from classes.txt in the directory being validated
+        classes_file = dir_path / "classes.txt"
+        if not classes_file.exists():
+            # Fallback to pipeline config if no classes.txt
+            num_classes = len(self.paths.config.classes)
+            warnings.append(f"⚠ classes.txt not found in {dir_path.name}, using pipeline config ({num_classes} classes)")
+        else:
+            # Count non-empty lines in classes.txt
+            with open(classes_file, 'r') as f:
+                num_classes = sum(1 for line in f if line.strip())
+            details["classes_file"] = str(classes_file)
+            details["num_classes_from_file"] = num_classes
+
         invalid_format = []
         missing_images = []
-        num_classes = len(self.paths.config.classes)
 
         for label_file in label_files:
             # Check format
