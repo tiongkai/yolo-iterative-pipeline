@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Automatic file movement from working to verified directory.
+Automatic file copying from working to verified directory.
 
 Monitors data/working/images/ for X-AnyLabeling JSON files with verified flag.
 When a JSON file has flags.verified=true:
 - Converts JSON annotations to YOLO format
-- Moves image to data/verified/images/
+- Copies image to data/verified/images/ (keeps original in working/)
 - Creates YOLO label in data/verified/labels/
 - Leaves JSON in working/images/ (for X-AnyLabeling)
+
+Note: Images are COPIED, not moved. This allows continued annotation
+      in working/ while training uses copies in verified/.
 
 Usage:
     python scripts/auto_move_verified.py [--interval 60] [--stability 60]
@@ -461,20 +464,23 @@ def auto_move_loop(
     Checks X-AnyLabeling JSON files for flags.verified=true.
     When found:
     - Converts JSON annotations to YOLO format
-    - Moves image to verified/images/
+    - Copies image to verified/images/ (keeps original in working/)
     - Creates YOLO label in verified/labels/
     - Leaves JSON in working/images/
 
     Expected structure:
         working_dir/images/*.json  → check for verified flag
-        working_dir/images/*.png   → verified_dir/images/*.png
+        working_dir/images/*.png   → COPIED to verified_dir/images/*.png
         (generated) → verified_dir/labels/*.txt
+
+    Note: Images are COPIED, not moved. This allows continued annotation
+          in working/ while training uses copies in verified/.
 
     Args:
         working_dir: Directory to monitor (data/working/)
         verified_dir: Destination directory (data/verified/)
         check_interval: Seconds between checks
-        stability_threshold: Seconds of no modification before moving
+        stability_threshold: Seconds of no modification before copying
     """
     # Initialize verification tracker
     tracker = VerificationTracker()
@@ -501,7 +507,7 @@ def auto_move_loop(
         logger.error(f"Expected structure: {working_dir}/images/")
         return
 
-    logger.info(f"Starting auto-move watcher (JSON-based verification)")
+    logger.info(f"Starting auto-copy watcher (JSON-based verification)")
     logger.info(f"  Working dir: {working_dir}")
     logger.info(f"  Images dir: {images_dir}")
     logger.info(f"  Verified dir: {verified_dir}")
@@ -511,6 +517,7 @@ def auto_move_loop(
     logger.info(f"✓  Monitoring: {images_dir}/*.json")
     logger.info(f"✓  Checking: flags.verified == true")
     logger.info(f"✓  Converting: JSON → YOLO format")
+    logger.info(f"✓  Copying: Images stay in working/, copies go to verified/")
     logger.info(f"")
 
     # Initial scan of working directory
@@ -597,13 +604,14 @@ def auto_move_loop(
                     os.rename(str(label_tmp), str(label_path))
                     os.rename(str(image_tmp), str(image_dst))
 
-                    # Step 5: Delete original image only after both renames succeed
-                    image_path.unlink()
+                    # Step 5: Keep original image in working/ (copied, not moved)
+                    # Image stays in working/images/ for continued annotation
+                    # Copy is now in verified/images/ for training
 
                     # Log as verified in tracker
                     tracker.mark_verified(image_path.name)
                     moved_count += 1
-                    logger.info(f"✓ Moved: {image_name} → verified/ ({len(yolo_lines)} annotations)")
+                    logger.info(f"✓ Copied: {image_name} → verified/ ({len(yolo_lines)} annotations)")
 
                 except Exception as e:
                     logger.error(f"Error processing {json_path.name}: {e}")
@@ -625,8 +633,9 @@ def auto_move_loop(
                 verified_labels_dir = verified_dir / 'labels'
                 verified_count = len(list(verified_labels_dir.glob("*.txt"))) if verified_labels_dir.exists() else 0
                 stats = tracker.get_stats()
-                logger.info(f"Moved {moved_count} files. Total verified: {verified_count}")
+                logger.info(f"Copied {moved_count} files. Total verified: {verified_count}")
                 logger.info(f"  Progress: {stats['total_verified']} verified / {stats['total']} total ({stats['verification_rate']:.1f}%)")
+                logger.info(f"  Note: Images remain in working/ for continued annotation")
 
             # Wait before next check
             time.sleep(check_interval)
