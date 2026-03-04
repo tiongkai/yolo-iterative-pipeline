@@ -66,10 +66,15 @@ Priority score = 0.40×uncertainty + 0.35×disagreement + 0.25×diversity
 
 **Workflow (Option A: Automatic - Recommended):**
 1. User annotates in X-AnyLabeling → saves to data/working/
-2. Auto-move script (`scripts/auto_move_verified.py`) watches working/
+   - Reviews and corrects annotations
+   - Presses **Space** to mark as verified (sets `flags.verified: true` in JSON)
+   - Saves with Ctrl+S
+2. Auto-move script (`scripts/auto_move_verified.py`) watches working/images/*.json
+   - Checks for `flags.verified == true` in X-AnyLabeling JSON
    - Waits 60s for file stability
-   - Validates YOLO format
-   - Moves to data/verified/
+   - Converts JSON annotations → YOLO format
+   - Moves image to data/verified/images/
+   - Creates YOLO label in data/verified/labels/
 3. Training watcher (`yolo-pipeline-watch`) monitors verified/
 4. After 50 verified images → training auto-triggers
 5. New model promoted to models/active/best.pt (if improved)
@@ -80,7 +85,11 @@ Priority score = 0.40×uncertainty + 0.35×disagreement + 0.25×diversity
 - **Option B (Manual)**: Use `./scripts/move_verified.sh` to manually move batches
 - **Option C (Direct)**: Save directly to data/verified/ (skip working/ step)
 
-**CRITICAL:** `yolo-pipeline-watch` monitors `verified/` not `working/`. Movement from working/ to verified/ requires either auto-move script or manual movement.
+**CRITICAL:**
+- `yolo-pipeline-watch` monitors `verified/` not `working/`
+- Auto-move script checks `flags.verified == true` in X-AnyLabeling JSON files
+- Users must press **Space** in X-AnyLabeling to mark files as verified
+- Movement from working/ to verified/ requires either auto-move script (checks JSON flag) or manual movement
 
 ## Metrics Tracked
 

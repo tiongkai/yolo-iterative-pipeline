@@ -158,15 +158,16 @@ x-anylabeling  # Open Dir: data/verified/ (save directly)
 6. Press `Ctrl+S` to save (updates label file in working/labels/)
 
 **Workflow:**
-- Option A: **Manual verification** in X-AnyLabeling + **automatic movement** after 60s stability
-  - Script records start time when launched
-  - Pre-labeled files (modified before start) are **automatically skipped**
-  - You correct boxes, delete false positives, add missing objects
-  - Save (Ctrl+S) updates file modification time to NOW
-  - 60s after save, script auto-moves file to verified/
-  - **✅ Guarantees: Only manually reviewed files are moved**
-- Option B: Manual verification + manual batch movement with `./scripts/move_verified.sh`
-- Option C: Save directly to verified/ (no intermediate step, no pre-labels)
+- Option A (Auto): **Manual verification** with Space key + **automatic movement** based on verified flag
+  - Review images in X-AnyLabeling
+  - Correct boxes, delete false positives, add missing objects
+  - Press **Space** to mark as verified (sets `flags.verified: true` in JSON)
+  - Save (Ctrl+S) to update JSON file
+  - 60s after save, script checks JSON for verified flag
+  - Auto-moves image and creates YOLO label in verified/
+  - **✅ Guarantees: Only images marked as verified are moved**
+- Option B (Manual): Manual verification + manual batch movement with `./scripts/move_verified.sh`
+- Option C (Direct): Save directly to verified/ (no intermediate step, no pre-labels)
 
 ## Workflow
 
@@ -179,16 +180,17 @@ x-anylabeling  # Open Dir: data/verified/ (save directly)
    - Delete false positives (Delete key)
    - Add missing objects (W key + draw)
    - Fix wrong class labels
+   - Press Space to mark as verified
    - Save (Ctrl+S), move to next image (D key)
    ↓
 2. Auto-move script monitors (Terminal 1)
-   - Records start time when launched
-   - Monitors data/working/labels/ directory
-   - Skips all pre-labeled files (modified before start)
-   - Detects files you saved (modified after start, stable 60s)
-   - Validates YOLO format
+   - Monitors data/working/images/*.json files
+   - Checks flags.verified == true in JSON
+   - Waits 60s after JSON modification for stability
+   - Converts JSON annotations → YOLO format
    - Moves image → data/verified/images/
-   - Moves label → data/verified/labels/
+   - Creates YOLO label → data/verified/labels/
+   - Leaves JSON in working/images/ (for X-AnyLabeling)
    - Logs in verification tracker as "verified"
    ↓
 3. Training watcher counts files → triggers at 50 images
@@ -259,10 +261,11 @@ yolo-pipeline-doctor
 # View setup instructions for 4-terminal workflow
 ./scripts/start_pipeline.sh
 
-# Automatic file movement (working/labels/ → verified/labels/, images/)
-# Records start timestamp, only moves files modified AFTER that time
-# Pre-labeled files are skipped until you open/save in X-AnyLabeling
-# Monitors labels/, moves both image and label to verified subdirectories
+# Automatic file movement (JSON-based verification)
+# Monitors working/images/*.json for verified flag
+# Checks flags.verified == true, converts JSON → YOLO format
+# Moves image to verified/images/, creates label in verified/labels/
+# Requires: data/verified/classes.txt for class mapping
 python scripts/auto_move_verified.py [--interval 60] [--stability 60]
 
 # Check verification status (verified vs unverified images)

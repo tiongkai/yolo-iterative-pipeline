@@ -64,19 +64,21 @@ python scripts/auto_move_verified.py
 ```
 
 **What it does:**
-- Records current timestamp when script starts
-- Monitors `data/working/labels/` directory
-- **Automatically skips** all pre-labeled files (modified before script start)
-- **Only moves files you've opened/saved** in X-AnyLabeling (modified after script start)
-- Waits 60s after save for stability
-- Validates YOLO format before moving
-- Moves to `data/verified/images/` and `data/verified/labels/` automatically
+- Monitors `data/working/images/` for X-AnyLabeling JSON files
+- **Checks verified flag** in JSON (`flags.verified == true`)
+- Waits 60s after JSON modification for stability
+- Converts JSON annotations → YOLO format
+- Moves image to `data/verified/images/`
+- Creates YOLO label in `data/verified/labels/`
+- Leaves JSON in `working/images/` (for X-AnyLabeling)
 
 **How it ensures manual verification:**
-1. Script start time: `2026-03-02 17:30:00`
-2. Pre-labeled file last modified: `2026-03-02 14:26:00` → **SKIPPED** (before start)
-3. You open file in X-AnyLabeling, save (Ctrl+S)
-4. File modification time updates: `2026-03-02 17:35:00` → **MOVED** (after start + 60s)
+1. You review image in X-AnyLabeling
+2. Correct boxes, delete false positives, add missing objects
+3. Press **Space** to mark as verified (sets `flags.verified: true` in JSON)
+4. Save (Ctrl+S) - updates JSON file
+5. 60 seconds later, script auto-moves image + creates YOLO label
+6. Only verified images are moved to training pipeline
 
 #### **Terminal 2: Training Watcher**
 ```bash
@@ -127,15 +129,17 @@ When X-AnyLabeling opens:
      - Wrong class → click box, select new class
      - Missing objects → press `W` and draw new boxes
      - False positives → select box, press `Delete`
+   - **Press `Space` to mark as verified** (sets verified flag)
    - Press `Ctrl+S` to save after each image
+   - Move to next image with `D`
 
 ## 🔄 Workflow
 
-**Key Concept:** Manual verification + automatic movement
+**Key Concept:** Verified flag + automatic movement
 
-- **Manual verification** = You review and correct images in X-AnyLabeling
-- **Automatic movement** = Script moves files modified AFTER script start + 60s stability
-- **Timestamp protection** = Pre-labeled files skipped until you open/save them
+- **Manual verification** = You review images and press Space to mark as verified
+- **Automatic movement** = Script detects verified flag in JSON and moves files
+- **Flag-based protection** = Only images with `verified=true` flag are moved
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -145,23 +149,24 @@ When X-AnyLabeling opens:
 │    - Delete false positives (Delete key)                │
 │    - Add missing objects (W key + draw)                 │
 │    - Fix wrong class labels                             │
+│    - **Press Space to mark as verified** ✓              │
 │    - Save (Ctrl+S)                                      │
 │    - Move to next image (D key)                         │
 └──────────────────────────────────────────────────────────┘
                          ↓
 ┌──────────────────────────────────────────────────────────┐
 │ 2. AUTOMATIC MOVEMENT (Terminal 1)                      │
-│    - Script records start time when launched            │
-│    - Monitors data/working/ every 60 seconds            │
-│    - Pre-labeled files (modified before start): SKIPPED │
-│    - Files you save (modified after start): MOVED       │
-│    - Waits 60s after your save (Ctrl+S) for stability   │
-│    - Validates YOLO format                              │
-│    - Moves image + label → data/verified/               │
+│    - Monitors data/working/images/*.json every 60s      │
+│    - Checks for flags.verified == true in JSON          │
+│    - Waits 60s after JSON modification for stability    │
+│    - Converts JSON annotations → YOLO format            │
+│    - Moves image → data/verified/images/                │
+│    - Creates YOLO label → data/verified/labels/         │
+│    - Leaves JSON in working/images/ (for X-AnyLabeling) │
 │    - Logs in verification tracker as "verified"         │
 │                                                          │
-│    ✅ Timestamp-based verification ensures ONLY         │
-│       manually reviewed files are moved!                │
+│    ✅ Verified flag ensures ONLY manually reviewed      │
+│       files are moved!                                  │
 └──────────────────────────────────────────────────────────┘
                          ↓
 ┌──────────────────────────────────────────────────────────┐
@@ -220,14 +225,14 @@ python scripts/track_verification.py --list-unverified  # Show unverified images
 
 | Key | Action |
 |-----|--------|
+| `Space` | **Mark as verified** (required for auto-move) ✓ |
+| `Ctrl+S` | Save current annotations |
 | `D` | Next image |
 | `A` | Previous image |
 | `W` | Draw new box |
 | `Delete` | Remove selected box |
-| `Ctrl+S` | Save current annotations |
 | `R` | Run AI prediction (if model loaded) |
 | `Ctrl+Z` | Undo |
-| `Space` | Flag as verified |
 | `1-3` | Quick-select class (1=boat, 2=human, 3=outboard motor) |
 
 ## 🎯 Expected Timeline
@@ -307,8 +312,16 @@ Overall Status: WARNINGS (can proceed with caution)
 # Check logs
 tail -f logs/auto_move.log
 
-# Verify file stability threshold
-# Files must be unchanged for 60 seconds before moving
+# Common issues:
+# 1. Did you press Space to mark as verified?
+# 2. Did you save (Ctrl+S) after marking verified?
+# 3. Wait 60 seconds after save for stability threshold
+
+# Verify JSON has verified flag:
+grep -l '"verified": true' data/working/images/*.json | head -5
+
+# Check classes.txt exists in verified/:
+ls -la data/verified/classes.txt
 ```
 
 ### Training not triggering
