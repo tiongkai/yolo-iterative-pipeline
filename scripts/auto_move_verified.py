@@ -54,11 +54,13 @@ def load_class_mapping(classes_file: Path) -> Dict[str, int]:
         raise FileNotFoundError(f"Classes file not found: {classes_file}")
 
     class_map = {}
+    class_id = 0
     with open(classes_file, 'r') as f:
-        for idx, line in enumerate(f):
+        for line in f:
             class_name = line.strip()
             if class_name:  # Skip empty lines
-                class_map[class_name] = idx
+                class_map[class_name] = class_id
+                class_id += 1
 
     return class_map
 
