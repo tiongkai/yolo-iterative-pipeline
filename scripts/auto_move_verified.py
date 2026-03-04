@@ -2,11 +2,12 @@
 """
 Automatic file movement from working to verified directory.
 
-Monitors data/working/ and automatically moves annotation files to data/verified/
-when they meet verification criteria:
-- File has not been modified for N seconds (default: 60)
-- File has valid YOLO annotations
-- Corresponding image exists
+Monitors data/working/images/ for X-AnyLabeling JSON files with verified flag.
+When a JSON file has flags.verified=true:
+- Converts JSON annotations to YOLO format
+- Moves image to data/verified/images/
+- Creates YOLO label in data/verified/labels/
+- Leaves JSON in working/images/ (for X-AnyLabeling)
 
 Usage:
     python scripts/auto_move_verified.py [--interval 60] [--stability 60]
@@ -16,9 +17,11 @@ import time
 import shutil
 import sys
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 import logging
+from typing import Dict, List, Tuple, Optional
 
 # Add project root to path to import verification tracker
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,6 +36,162 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+def load_class_mapping(classes_file: Path) -> Dict[str, int]:
+    """Load classes.txt and return mapping of class_name -> class_id.
+
+    Args:
+        classes_file: Path to classes.txt file
+
+    Returns:
+        Dictionary mapping class names to IDs (0-indexed)
+
+    Example:
+        {'boat': 0, 'human': 1, 'outboard motor': 2}
+    """
+    if not classes_file.exists():
+        raise FileNotFoundError(f"Classes file not found: {classes_file}")
+
+    class_map = {}
+    with open(classes_file, 'r') as f:
+        for idx, line in enumerate(f):
+            class_name = line.strip()
+            if class_name:  # Skip empty lines
+                class_map[class_name] = idx
+
+    return class_map
+
+
+def validate_bbox_coordinates(
+    points: List[List[float]],
+    img_width: int,
+    img_height: int
+) -> bool:
+    """Validate that bbox coordinates are within image bounds.
+
+    Args:
+        points: List of [x, y] coordinates (4 corners of rectangle)
+        img_width: Image width in pixels
+        img_height: Image height in pixels
+
+    Returns:
+        True if all coordinates are valid, False otherwise
+    """
+    if len(points) != 4:
+        return False
+
+    for point in points:
+        if len(point) != 2:
+            return False
+        x, y = point
+        if x < 0 or x > img_width or y < 0 or y > img_height:
+            return False
+
+    return True
+
+
+def parse_xanylabeling_json(
+    json_path: Path,
+    class_map: Dict[str, int]
+) -> Tuple[List[str], List[str]]:
+    """Parse X-AnyLabeling JSON and convert to YOLO format.
+
+    Args:
+        json_path: Path to X-AnyLabeling JSON file
+        class_map: Dictionary mapping class names to IDs
+
+    Returns:
+        Tuple of (yolo_lines, warnings):
+            - yolo_lines: List of YOLO format strings
+            - warnings: List of warning messages for invalid shapes
+
+    YOLO format: class_id center_x center_y width height (normalized 0-1)
+    """
+    try:
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        return [], [f"Failed to parse JSON: {e}"]
+
+    img_width = data.get('imageWidth')
+    img_height = data.get('imageHeight')
+    shapes = data.get('shapes', [])
+
+    if not img_width or not img_height:
+        return [], ["Missing imageWidth or imageHeight in JSON"]
+
+    yolo_lines = []
+    warnings = []
+
+    for shape in shapes:
+        label = shape.get('label')
+        points = shape.get('points', [])
+        shape_type = shape.get('shape_type', 'rectangle')
+
+        # Only process rectangles
+        if shape_type != 'rectangle':
+            warnings.append(f"Skipping non-rectangle shape: {shape_type}")
+            continue
+
+        # Validate label exists in class mapping
+        if label not in class_map:
+            warnings.append(f"Unknown class label: {label}")
+            continue
+
+        # Validate coordinates
+        if not validate_bbox_coordinates(points, img_width, img_height):
+            warnings.append(f"Invalid bbox coordinates for label: {label}")
+            continue
+
+        # Convert pixel coordinates to YOLO format
+        # X-AnyLabeling provides 4 corners: [top-left, top-right, bottom-right, bottom-left]
+        x_coords = [p[0] for p in points]
+        y_coords = [p[1] for p in points]
+
+        x_min = min(x_coords)
+        x_max = max(x_coords)
+        y_min = min(y_coords)
+        y_max = max(y_coords)
+
+        # Calculate center and dimensions (normalized)
+        center_x = ((x_min + x_max) / 2) / img_width
+        center_y = ((y_min + y_max) / 2) / img_height
+        width = (x_max - x_min) / img_width
+        height = (y_max - y_min) / img_height
+
+        # Validate normalized coordinates are in [0, 1]
+        if not (0 <= center_x <= 1 and 0 <= center_y <= 1 and
+                0 <= width <= 1 and 0 <= height <= 1):
+            warnings.append(f"Normalized coordinates out of range for label: {label}")
+            continue
+
+        # Format as YOLO: class_id center_x center_y width height
+        class_id = class_map[label]
+        yolo_line = f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}"
+        yolo_lines.append(yolo_line)
+
+    return yolo_lines, warnings
+
+
+def is_verified(json_path: Path) -> bool:
+    """Check if JSON file has verified flag set to true.
+
+    Args:
+        json_path: Path to X-AnyLabeling JSON file
+
+    Returns:
+        True if flags.verified == true, False otherwise
+    """
+    try:
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+
+        flags = data.get('flags', {})
+        return flags.get('verified', False) is True
+    except Exception as e:
+        logger.warning(f"Error checking verified flag in {json_path.name}: {e}")
+        return False
 
 
 def is_valid_yolo_annotation(label_path: Path) -> bool:
@@ -295,14 +454,19 @@ def auto_move_loop(
     stability_threshold: int = 60
 ):
     """
-    Main loop that monitors working/labels/ directory and moves stable files.
+    Main loop that monitors working/images/ for verified JSON files.
 
-    IMPORTANT: Only moves files that were modified AFTER this script started.
-    This ensures pre-labeled files don't auto-move without manual review.
+    Checks X-AnyLabeling JSON files for flags.verified=true.
+    When found:
+    - Converts JSON annotations to YOLO format
+    - Moves image to verified/images/
+    - Creates YOLO label in verified/labels/
+    - Leaves JSON in working/images/
 
     Expected structure:
-        working_dir/labels/*.txt  → verified_dir/labels/*.txt
-        working_dir/images/*.png  → verified_dir/images/*.png
+        working_dir/images/*.json  → check for verified flag
+        working_dir/images/*.png   → verified_dir/images/*.png
+        (generated) → verified_dir/labels/*.txt
 
     Args:
         working_dir: Directory to monitor (data/working/)
@@ -318,56 +482,142 @@ def auto_move_loop(
     if tmp_count > 0:
         logger.info(f"Cleaned up {tmp_count} stale temp files")
 
-    # Record start time - only files modified after this will be moved
-    script_start_time = time.time()
-
-    # Monitor labels subdirectory
-    labels_dir = working_dir / 'labels'
-    if not labels_dir.exists():
-        logger.error(f"Labels directory not found: {labels_dir}")
-        logger.error(f"Expected structure: {working_dir}/labels/ and {working_dir}/images/")
+    # Load class mapping from verified/classes.txt
+    classes_file = verified_dir / 'classes.txt'
+    try:
+        class_map = load_class_mapping(classes_file)
+        logger.info(f"Loaded {len(class_map)} classes from {classes_file}")
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        logger.error("Cannot proceed without classes.txt")
         return
 
-    logger.info(f"Starting auto-move watcher with verification tracking")
+    # Monitor images subdirectory (contains JSONs)
+    images_dir = working_dir / 'images'
+    if not images_dir.exists():
+        logger.error(f"Images directory not found: {images_dir}")
+        logger.error(f"Expected structure: {working_dir}/images/")
+        return
+
+    logger.info(f"Starting auto-move watcher (JSON-based verification)")
     logger.info(f"  Working dir: {working_dir}")
-    logger.info(f"  Labels dir: {labels_dir}")
+    logger.info(f"  Images dir: {images_dir}")
     logger.info(f"  Verified dir: {verified_dir}")
     logger.info(f"  Check interval: {check_interval}s")
     logger.info(f"  Stability threshold: {stability_threshold}s")
-    logger.info(f"  Script start time: {datetime.fromtimestamp(script_start_time).strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"")
-    logger.info(f"⚠️  IMPORTANT: Only files modified AFTER script start will be moved")
-    logger.info(f"⚠️  Pre-labeled files will NOT auto-move until you open/save them in X-AnyLabeling")
+    logger.info(f"✓  Monitoring: {images_dir}/*.json")
+    logger.info(f"✓  Checking: flags.verified == true")
+    logger.info(f"✓  Converting: JSON → YOLO format")
     logger.info(f"")
 
     # Initial scan of working directory
-    tracker.scan_working_dir(working_dir / 'images')
+    tracker.scan_working_dir(images_dir)
     stats = tracker.get_stats()
     logger.info(f"  Initial status: {stats['total_verified']} verified, {stats['total_unverified']} unverified")
 
     try:
         while True:
-            # Find all label files in working/labels/ directory
-            label_files = list(labels_dir.glob("*.txt"))
+            # Find all JSON files in working/images/ directory
+            json_files = list(images_dir.glob("*.json"))
 
             moved_count = 0
-            skipped_count = 0
+            verified_count_checked = 0
 
-            for label_path in label_files:
-                # Get file modification time
-                file_mtime = label_path.stat().st_mtime
+            for json_path in json_files:
+                # Check if file is stable (not being modified)
+                file_age = get_file_age(json_path)
 
-                # Skip if file was NOT modified after script started
-                if file_mtime < script_start_time:
-                    skipped_count += 1
+                if file_age < stability_threshold:
+                    continue  # Still being modified
+
+                # Check if verified flag is set
+                if not is_verified(json_path):
                     continue
 
-                # Check if file is stable (not being modified)
-                file_age = get_file_age(label_path)
+                verified_count_checked += 1
 
-                if file_age >= stability_threshold:
-                    if move_verified_file(label_path, verified_dir, tracker):
-                        moved_count += 1
+                # Get image path (same name, different extension)
+                image_name = json_path.stem
+                image_path = None
+                for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
+                    candidate = images_dir / f"{image_name}{ext}"
+                    if candidate.exists():
+                        image_path = candidate
+                        break
+
+                if not image_path:
+                    logger.warning(f"No image found for {json_path.name}")
+                    continue
+
+                # Parse JSON and convert to YOLO format
+                yolo_lines, warnings = parse_xanylabeling_json(json_path, class_map)
+
+                if warnings:
+                    for warning in warnings:
+                        logger.warning(f"{json_path.name}: {warning}")
+
+                if not yolo_lines:
+                    logger.warning(f"No valid annotations in {json_path.name}, skipping")
+                    continue
+
+                # Create verified subdirectories
+                verified_images_dir = verified_dir / 'images'
+                verified_labels_dir = verified_dir / 'labels'
+                verified_images_dir.mkdir(parents=True, exist_ok=True)
+                verified_labels_dir.mkdir(parents=True, exist_ok=True)
+
+                # Prepare paths
+                label_path = verified_labels_dir / f"{image_name}.txt"
+                image_dst = verified_images_dir / image_path.name
+                label_tmp = verified_labels_dir / f"{image_name}.txt.tmp"
+                image_tmp = verified_images_dir / f"{image_path.name}.tmp"
+
+                # Atomically move image and create label
+                try:
+                    # Check if destination already exists
+                    if label_path.exists() or image_dst.exists():
+                        logger.warning(f"Destination already exists for {image_name}, skipping")
+                        continue
+
+                    # Step 1: Write label file with .tmp extension
+                    with open(label_tmp, 'w') as f:
+                        f.write('\n'.join(yolo_lines) + '\n')
+
+                    # Step 2: Copy image with .tmp extension
+                    shutil.copy2(str(image_path), str(image_tmp))
+
+                    # Step 3: Verify both temp files exist
+                    if not label_tmp.exists() or not image_tmp.exists():
+                        raise IOError("Temp file creation failed")
+
+                    # Step 4: Rename atomically (atomic on POSIX)
+                    os.rename(str(label_tmp), str(label_path))
+                    os.rename(str(image_tmp), str(image_dst))
+
+                    # Step 5: Delete original image only after both renames succeed
+                    image_path.unlink()
+
+                    # Log as verified in tracker
+                    tracker.mark_verified(image_path.name)
+                    moved_count += 1
+                    logger.info(f"✓ Moved: {image_name} → verified/ ({len(yolo_lines)} annotations)")
+
+                except Exception as e:
+                    logger.error(f"Error processing {json_path.name}: {e}")
+
+                    # Rollback: remove any files that were created
+                    try:
+                        if label_path.exists():
+                            label_path.unlink()
+                        if image_dst.exists():
+                            image_dst.unlink()
+                        if label_tmp.exists():
+                            label_tmp.unlink()
+                        if image_tmp.exists():
+                            image_tmp.unlink()
+                    except Exception as cleanup_err:
+                        logger.warning(f"Cleanup error for {image_name}: {cleanup_err}")
 
             if moved_count > 0:
                 verified_labels_dir = verified_dir / 'labels'
@@ -375,10 +625,6 @@ def auto_move_loop(
                 stats = tracker.get_stats()
                 logger.info(f"Moved {moved_count} files. Total verified: {verified_count}")
                 logger.info(f"  Progress: {stats['total_verified']} verified / {stats['total']} total ({stats['verification_rate']:.1f}%)")
-
-            # Log status every 10 checks (10 minutes by default)
-            if int(time.time() - script_start_time) % (check_interval * 10) < check_interval:
-                logger.info(f"Status: {skipped_count} pre-labeled files waiting for review, {len(label_files) - skipped_count} files recently modified")
 
             # Wait before next check
             time.sleep(check_interval)
