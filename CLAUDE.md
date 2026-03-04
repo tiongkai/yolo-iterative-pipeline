@@ -232,7 +232,7 @@ python pipeline/export.py --version v007 --formats onnx tensorrt
 ```bash
 cd /home/lenovo6/TiongKai/yolo-iterative-pipeline
 source venv/bin/activate
-yolo-pipeline run       # Launches all services
+yolo-pipeline-run       # Launches all services
 xanylabeling            # Separate terminal for annotation
 ```
 
@@ -274,7 +274,7 @@ Add robustness and usability improvements to existing pipeline:
 - **PipelineValidator:** Comprehensive validation (doctor command, preflight checks)
 - **Manifest-based splits:** Keep files in verified/, use train.txt/eval.txt
 - **Smart resume:** Resume training from active model by default
-- **Process manager:** Single command (`yolo-pipeline run`) replaces 4-terminal workflow
+- **Process manager:** Single command (`yolo-pipeline-run`) replaces 4-terminal workflow
 - **Atomic file moves:** Copy-then-rename for data integrity
 
 ### What Was Delivered
@@ -289,7 +289,7 @@ Add robustness and usability improvements to existing pipeline:
 - **Smart resume training** - Automatically resumes from active model
 - **Atomic file moves** - Copy-then-rename pattern in auto_move_verified.py and migration script
 - **Doctor command** (`yolo-pipeline-doctor`) - Pre-flight health checks
-- **Process manager** (`yolo-pipeline run`) - Single command replaces 4-terminal workflow
+- **Process manager** (`yolo-pipeline-run`) - Single command replaces 4-terminal workflow
 
 ✅ **Component Refactoring (Tasks 13-15):**
 - Refactored train.py, watcher.py, monitor.py, data_utils.py to use PathManager
@@ -325,4 +325,4 @@ Add robustness and usability improvements to existing pipeline:
 Users with existing pipelines can:
 1. Run `yolo-pipeline-doctor` to check current setup
 2. Use `scripts/migrate_to_yolo_layout.py` to convert flat structure to YOLO format
-3. Start using `yolo-pipeline run` for simplified workflow
+3. Start using `yolo-pipeline-run` for simplified workflow

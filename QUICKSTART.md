@@ -21,7 +21,7 @@ Your YOLO Iterative Pipeline is ready with:
 ```bash
 cd /home/lenovo6/TiongKai/yolo-iterative-pipeline
 source venv/bin/activate
-yolo-pipeline run
+yolo-pipeline-run
 ```
 
 **What it does:**
@@ -39,9 +39,9 @@ That's it! Just 2 terminals instead of 4.
 
 **Optional flags:**
 ```bash
-yolo-pipeline run --no-doctor       # Skip health check
-yolo-pipeline run --no-auto-move    # Manual file movement
-yolo-pipeline run --debug           # Verbose logging
+yolo-pipeline-run --no-doctor       # Skip health check
+yolo-pipeline-run --no-auto-move    # Manual file movement
+yolo-pipeline-run --debug           # Verbose logging
 ```
 
 ### Method 2: View 4-Terminal Instructions
@@ -256,7 +256,7 @@ With 1,332 images and Option A workflow:
 ## 🛑 Stopping the Pipeline
 
 **Method 1 (Single Command):**
-- Press `Ctrl+C` in the `yolo-pipeline run` terminal
+- Press `Ctrl+C` in the `yolo-pipeline-run` terminal
 - Process manager gracefully shuts down all services
 - Close X-AnyLabeling: `File` → `Exit`
 
@@ -373,7 +373,7 @@ Questions? Check these resources:
 - `docs/IMPLEMENTATION_SUMMARY.md` - Comprehensive technical details
 - Inline help:
   ```bash
-  yolo-pipeline run --help           # Single-command workflow
+  yolo-pipeline-run --help           # Single-command workflow
   yolo-pipeline-doctor --help        # Health check
   yolo-pipeline-train --help         # Manual training
   yolo-pipeline-watch --help         # File watcher

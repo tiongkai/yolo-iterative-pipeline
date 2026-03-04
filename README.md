@@ -88,7 +88,7 @@ data/
 
 ```bash
 # Launch all services with one command
-yolo-pipeline run
+yolo-pipeline-run
 
 # Then open X-AnyLabeling
 xanylabeling  # Open Dir: data/working/
@@ -242,13 +242,13 @@ yolo-pipeline-score --top 20
 
 ```bash
 # Launch all services with one command
-yolo-pipeline run [--no-doctor] [--no-auto-move] [--debug]
+yolo-pipeline-run [--no-doctor] [--no-auto-move] [--debug]
 
 # Health check before starting
 yolo-pipeline-doctor
 ```
 
-**What `yolo-pipeline run` does:**
+**What `yolo-pipeline-run` does:**
 1. Runs `yolo-pipeline-doctor` (validates structure, configs, annotations, model)
 2. Launches 3 services: auto-move watcher, training watcher, status monitor
 3. Shows real-time logs from all services
