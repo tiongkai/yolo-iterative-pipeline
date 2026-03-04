@@ -175,14 +175,26 @@ def test_graceful_shutdown_on_sigterm(valid_pipeline_structure, pipeline_config)
     # Counter for poll calls to simulate processes stopping over time
     poll_counts = {"proc1": 0, "proc2": 0, "proc3": 0}
 
+    # Calculate expected poll iterations based on timeout and sleep interval
+    # stop_all() loops every 0.1 seconds (see process_manager.py line 83)
+    # With timeout=0.2s, we expect: 0.2 / 0.1 = 2 iterations
+    TIMEOUT = 0.2
+    SLEEP_INTERVAL = 0.1
+    EXPECTED_POLL_ITERATIONS = int(TIMEOUT / SLEEP_INTERVAL)  # = 2
+
     def make_poll_func(proc_name, stops_gracefully=True):
-        """Create poll function that returns None initially, then exit code."""
+        """Create poll function that returns None initially, then exit code.
+
+        Args:
+            proc_name: Name of process for tracking poll counts
+            stops_gracefully: If True, process stops after expected iterations
+        """
         def poll():
             poll_counts[proc_name] += 1
-            if stops_gracefully and poll_counts[proc_name] > 2:
-                return 0  # Stopped
+            if stops_gracefully and poll_counts[proc_name] >= EXPECTED_POLL_ITERATIONS:
+                return 0  # Process stopped gracefully
             elif not stops_gracefully:
-                return None  # Never stops
+                return None  # Process never stops (will be killed)
             return None  # Still running
         return poll
 
@@ -199,7 +211,7 @@ def test_graceful_shutdown_on_sigterm(valid_pipeline_structure, pipeline_config)
 
     with patch('pipeline.process_manager.time.sleep'):
         # Call stop_all with short timeout
-        manager.stop_all(timeout=0.2)
+        manager.stop_all(timeout=TIMEOUT)
 
     # Verify SIGTERM sent to all
     proc1.terminate.assert_called_once()
@@ -320,8 +332,21 @@ def test_no_auto_move_flag(valid_pipeline_structure, pipeline_config, mock_proce
         assert manager.processes[1][0] == "monitor"
 
 
-def test_process_monitoring_loop_detects_death(valid_pipeline_structure, pipeline_config):
-    """Test that monitoring loop detects when a process dies."""
+def test_stop_all_triggered_when_process_exits(valid_pipeline_structure, pipeline_config):
+    """Test that stop_all() is called when a process exits unexpectedly.
+
+    NOTE: This tests the concept of detecting process death and triggering
+    shutdown, but doesn't test the actual run() monitoring loop implementation
+    (lines 180-188 in process_manager.py) due to the difficulty of properly
+    mocking the blocking run() method. The test replicates the monitoring logic
+    inline to verify the behavior works correctly.
+
+    For a true end-to-end test of run(), you would need to:
+    1. Run manager.run() in a background thread
+    2. Simulate a process dying after 1 second
+    3. Verify run() exits and stop_all() is called
+    This is more complex and fragile due to threading and timing issues.
+    """
     paths = PathManager(valid_pipeline_structure, pipeline_config)
     manager = ProcessManager(paths, pipeline_config)
 
@@ -336,7 +361,7 @@ def test_process_monitoring_loop_detects_death(valid_pipeline_structure, pipelin
     def poll_side_effect():
         check_count[0] += 1
         if check_count[0] > 1:
-            return 1  # Died
+            return 1  # Died with exit code 1
         return None  # Still running
 
     proc1.poll.return_value = None  # Always running
@@ -361,7 +386,7 @@ def test_process_monitoring_loop_detects_death(valid_pipeline_structure, pipelin
 
         mock_sleep.side_effect = handle_sleep
 
-        # Run monitoring loop (should detect death and exit)
+        # Replicate monitoring loop logic (same as process_manager.py lines 180-188)
         while manager.running:
             # Check if any process died unexpectedly
             for name, proc in manager.processes:
