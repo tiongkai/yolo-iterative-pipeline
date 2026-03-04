@@ -217,12 +217,19 @@ python pipeline/export.py --version v007 --formats onnx tensorrt
 - **Source:** Converted from detections.json (SAM3 format → YOLO format)
 - **Next step:** Review/correct annotations in X-AnyLabeling
 
-### Quick Start (4-Terminal Workflow)
+### Quick Start
 
+**Single Command (Recommended - v0.2.0+):**
 ```bash
-# Terminal 1: Auto-move watcher
 cd /home/lenovo6/TiongKai/yolo-iterative-pipeline
 source venv/bin/activate
+yolo-pipeline run       # Launches all services
+xanylabeling            # Separate terminal for annotation
+```
+
+**Traditional 4-Terminal Workflow:**
+```bash
+# Terminal 1: Auto-move watcher
 python scripts/auto_move_verified.py
 
 # Terminal 2: Training watcher
@@ -244,13 +251,12 @@ See `QUICKSTART.md` for detailed instructions.
 - **Training History**: `logs/training_history.json` (created after first training)
 - **Priority Queue**: `logs/priority_queue.txt` (updated after each training)
 
-## Pipeline Improvements (In Progress - March 3, 2026)
+## Pipeline Improvements (✅ COMPLETE - March 4, 2026 - v0.2.0)
 
-**Branch:** `feature/pipeline-improvements`  
-**Status:** Phase 1-2 Complete (Foundation Layer) - 21% done (4/19 tasks)  
-**Design:** `docs/plans/2026-03-03-pipeline-improvements-design.md`  
-**Progress:** `docs/PIPELINE_IMPROVEMENTS_PROGRESS.md`  
-**Resume Guide:** `RESUME_HERE.md`
+**Status:** ✅ **MERGED TO MAIN** - All 19 tasks complete (100%)
+**Design:** `docs/plans/2026-03-03-pipeline-improvements-design.md`
+**Progress:** `docs/PIPELINE_IMPROVEMENTS_PROGRESS.md` (archived)
+**Release:** v0.2.0
 
 ### Goal
 
@@ -262,71 +268,52 @@ Add robustness and usability improvements to existing pipeline:
 - **Process manager:** Single command (`yolo-pipeline run`) replaces 4-terminal workflow
 - **Atomic file moves:** Copy-then-rename for data integrity
 
-### What's Complete
+### What Was Delivered
 
-✅ **PathManager** (`pipeline/paths.py`) - 100% coverage
-- Single source of truth for all directory paths
-- 14 methods: data dirs, manifests, models, configs, logs
-- Enforces YOLO `images/` and `labels/` subdirectory structure
+✅ **Foundation Layer (Tasks 1-4):**
+- **PathManager** (`pipeline/paths.py`) - Centralized path management, 14 methods
+- **PipelineValidator** (`pipeline/validation.py`) - Structure, config, annotation, model validation
+- **HealthReport** - Aggregates all validation checks with `is_healthy()`
 
-✅ **Validation Dataclasses** (`pipeline/validation.py`) - 100% coverage
-- `ValidationResult` - status, messages, details with validation
-- `HealthReport` - aggregates all checks with `is_healthy()`
-- Helper methods: `is_error()`, `is_warning()`, `is_pass()`
+✅ **Features (Tasks 5-12):**
+- **Manifest-based splits** - Files stay in verified/, train.txt/eval.txt reference them
+- **Smart resume training** - Automatically resumes from active model
+- **Atomic file moves** - Copy-then-rename pattern in auto_move_verified.py and migration script
+- **Doctor command** (`yolo-pipeline-doctor`) - Pre-flight health checks
+- **Process manager** (`yolo-pipeline run`) - Single command replaces 4-terminal workflow
 
-✅ **Structure Validation** (`pipeline/validation.py`) - 100% coverage
-- `PipelineValidator` class with `validate_structure()`
-- Checks 14 required directories with YOLO layout
-- Detects orphaned files in parent directories
-- Returns detailed ValidationResult (pass/warning/error)
+✅ **Component Refactoring (Tasks 13-15):**
+- Refactored train.py, watcher.py, monitor.py, data_utils.py to use PathManager
+- All components now use centralized path management
+- Removed hardcoded paths throughout codebase
 
-**Test Coverage:** 11/11 tests passing, 100% coverage on new code  
-**Code Quality:** All code spec-reviewed and quality-reviewed  
-**Commits:** 7 clean commits following TDD methodology
+✅ **Migration Tooling (Task 16):**
+- `scripts/migrate_to_yolo_layout.py` - Converts flat to YOLO structure
+- Dry-run, backup, and force modes
+- Atomic moves with rollback
 
-### What's Next
+✅ **Integration Tests (Tasks 17-19):**
+- 42 new integration tests across 3 test files
+- Doctor integration (14 tests), process manager (13 tests), manifest training (11 tests)
+- All end-to-end workflows validated
 
-📋 **Task 5:** Config and Annotation Validation (TODO)
-- Add `validate_config()` - checks YAML files parse correctly
-- Add `validate_annotations()` - validates YOLO format compliance
-
-📋 **Task 6:** Model Validation and Health Check (TODO)
-- Add `validate_model()` - checks active model loads
-- Add `full_health_check()` - aggregates all validators
-
-📋 **Remaining:** Manifest generation, atomic moves, doctor command, process manager, component refactoring, integration tests (Tasks 7-19)
-
-### How to Resume
-
-1. **Navigate to worktree:**
-   ```bash
-   cd /home/lenovo6/TiongKai/yolo-iterative-pipeline/.worktrees/feature/pipeline-improvements
-   ```
-
-2. **Verify tests pass:**
-   ```bash
-   pytest tests/test_paths.py tests/test_validation.py -v  # Should pass 11/11
-   ```
-
-3. **Read resume guide:**
-   ```bash
-   cat RESUME_HERE.md  # Quick reference
-   cat docs/PIPELINE_IMPROVEMENTS_PROGRESS.md  # Detailed progress
-   ```
-
-4. **Continue with Claude:**
-   Say: "Continue implementing pipeline improvements from Task 5"
+**Final Stats:**
+- **172 tests passing** (100% pass rate)
+- **66% code coverage** (up from 44%)
+- **31 files changed**: +7,142 insertions, -157 deletions
+- **46 clean commits** following TDD methodology
 
 ### Key Design Decisions
 
 - **PathManager uses `self.root_dir`** (not `self.root`) for clarity
 - **Validation in `__post_init__`** for dataclasses (follows config.py pattern)
-- **Helper methods on ValidationResult** for API consistency
-- **14 required directories checked** (added models/active, configs after code review)
+- **Manifest-based splits** prevent data duplication and simplify structure
+- **Copy-then-rename** pattern for atomic file operations
+- **Single-command workflow** simplifies user experience (2 terminals instead of 4)
 
-### Notes
+### Migration Guide for Users
 
-- Work is in isolated worktree on `feature/pipeline-improvements` branch
-- Foundation layer is solid, production-ready, and fully tested
-- No changes to main codebase yet (foundation only creates new files)
-- Can merge foundation independently or wait for full implementation
+Users with existing pipelines can:
+1. Run `yolo-pipeline-doctor` to check current setup
+2. Use `scripts/migrate_to_yolo_layout.py` to convert flat structure to YOLO format
+3. Start using `yolo-pipeline run` for simplified workflow

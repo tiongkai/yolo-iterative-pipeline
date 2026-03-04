@@ -1,11 +1,14 @@
 # YOLO Iterative Training Pipeline
 
+**Version:** 0.2.0 (March 2026)
+
 Active learning pipeline for iterative YOLO training that turns annotation into continuous model improvement. Dual-purpose system: assists annotation while producing production-ready detection models.
 
 ## Features
 
 - **Active Learning**: Automatically selects most valuable images to annotate next
 - **Iterative Training**: Trains YOLO models as you annotate (auto-triggers after N images)
+- **Verification Tracking**: Tracks manually verified vs. pre-labeled images separately
 - **Dual Metrics**: Eval set (in-distribution) + Test set (generalization)
 - **X-AnyLabeling Integration**: Load improved models directly into annotation tool
 - **Small Object Optimizations**: High-resolution training (1280px) with copy-paste augmentation
@@ -52,6 +55,13 @@ data/
 ├── sam3_annotations/       # SAM3 bounding boxes (YOLO format, noisy)
 │   ├── image001.txt
 │   └── classes.txt
+├── working/                # X-AnyLabeling workspace (YOLO format)
+│   ├── images/             # Images for annotation
+│   ├── labels/             # Label files (YOLO format)
+│   └── classes.txt
+├── verified/               # Human-verified annotations (YOLO format)
+│   ├── images/
+│   └── labels/
 └── test/                   # Pre-existing labeled data (fixed test set)
     ├── images/
     └── labels/
@@ -59,14 +69,50 @@ data/
 
 **Note:** `sam3_annotations/` contains initial noisy annotations from SAM3. The pipeline will help you clean these.
 
+**Directory Structure:** Uses YOLO dataset format with separate `images/` and `labels/` subdirectories:
+- `working/images/` + `working/labels/` → annotation workspace
+- `verified/images/` + `verified/labels/` → manually verified (ready for training)
+- `classes.txt` in working/ defines class names (one per line)
+
+**Important:** Pre-labeled annotations require manual verification before training:
+- Pre-labeled boxes may be too tight/loose, have false positives, or miss objects
+- You manually verify/correct each image in X-AnyLabeling
+- Auto-move script monitors `working/labels/`, moves to `verified/images/` + `verified/labels/`
+- Verification tracker logs which images have been manually reviewed
+
 ### 4. Choose Your Workflow
 
-**See `QUICKSTART.md` for detailed setup instructions.**
+**See `QUICKSTART.md` and `docs/IMPLEMENTATION_SUMMARY.md` for detailed setup instructions.**
 
-#### Option A: Automatic Workflow (Recommended - 4 terminals)
+#### Option A: Single Command (Recommended - NEW in v0.2.0)
 
 ```bash
-# Terminal 1: Auto-move watcher (working/ → verified/)
+# Launch all services with one command
+yolo-pipeline run
+
+# Then open X-AnyLabeling
+xanylabeling  # Open Dir: data/working/
+```
+
+**Features:**
+- Runs health check automatically
+- Manages 3 background services (auto-move, watcher, monitor)
+- Graceful shutdown on Ctrl+C
+- Real-time log streaming
+
+#### Option B: Automatic Workflow (4 terminals)
+
+**How it works:**
+1. Start the auto-move script (records current timestamp)
+2. Pre-labeled files (modified before script start) are **skipped**
+3. You manually verify images in X-AnyLabeling and save (Ctrl+S)
+4. Saving updates file modification time to NOW
+5. 60 seconds after save, script automatically moves file to verified/
+
+**Key insight:** Script only moves files modified AFTER it started = only manually reviewed files
+
+```bash
+# Terminal 1: Auto-move watcher (working/labels/ → verified/labels/)
 python scripts/auto_move_verified.py
 
 # Terminal 2: Training watcher (verified/ → training)
@@ -75,11 +121,11 @@ yolo-pipeline-watch
 # Terminal 3: Status monitor
 watch -n 5 yolo-pipeline-monitor
 
-# Terminal 4: Annotation
-x-anylabeling  # Open Dir: data/working/
+# Terminal 4: Annotation (manual verification)
+xanylabeling  # Open Dir: data/working/
 ```
 
-#### Option B: Manual Workflow (3 terminals)
+#### Option C: Manual Workflow (3 terminals)
 
 ```bash
 # Terminal 1: Training watcher
@@ -92,7 +138,7 @@ x-anylabeling  # Open Dir: data/working/
 ./scripts/move_verified.sh
 ```
 
-#### Option C: Direct Annotation (2 terminals)
+#### Option D: Direct Annotation (2 terminals)
 
 ```bash
 # Terminal 1: Training watcher
@@ -104,27 +150,46 @@ x-anylabeling  # Open Dir: data/verified/ (save directly)
 
 ### 5. Annotate with X-AnyLabeling
 
-1. Open X-AnyLabeling: `x-anylabeling`
-2. File → Open Dir → `data/working/` (or `data/verified/` for Option C)
-3. Edit → Label Settings → Add your classes
+1. Open X-AnyLabeling: `xanylabeling`
+2. File → Open Dir → `data/working/` (X-AnyLabeling auto-detects images/ and labels/)
+3. Edit → Label Settings → Verify classes (auto-loaded from classes.txt)
 4. (Optional) AI → Load Model → `models/active/best.pt`
 5. Review and correct annotations
-6. Press `Ctrl+S` to save
+6. Press `Ctrl+S` to save (updates label file in working/labels/)
 
 **Workflow:**
-- Option A: Files auto-move from working/ → verified/ after 60s stability
-- Option B: Manually move batches with `./scripts/move_verified.sh`
-- Option C: Save directly to verified/ (no intermediate step)
+- Option A: **Manual verification** in X-AnyLabeling + **automatic movement** after 60s stability
+  - Script records start time when launched
+  - Pre-labeled files (modified before start) are **automatically skipped**
+  - You correct boxes, delete false positives, add missing objects
+  - Save (Ctrl+S) updates file modification time to NOW
+  - 60s after save, script auto-moves file to verified/
+  - **✅ Guarantees: Only manually reviewed files are moved**
+- Option B: Manual verification + manual batch movement with `./scripts/move_verified.sh`
+- Option C: Save directly to verified/ (no intermediate step, no pre-labels)
 
 ## Workflow
 
 ### Iteration Cycle (Option A: Automatic)
 
 ```
-1. Annotate in X-AnyLabeling → saves to data/working/
+1. Manual verification in X-AnyLabeling (data/working/)
+   - Review pre-labeled boxes from SAM3
+   - Correct tight/loose boxes (drag corners)
+   - Delete false positives (Delete key)
+   - Add missing objects (W key + draw)
+   - Fix wrong class labels
+   - Save (Ctrl+S), move to next image (D key)
    ↓
-2. Auto-move script validates and moves → data/verified/
-   (after 60s file stability, validates YOLO format)
+2. Auto-move script monitors (Terminal 1)
+   - Records start time when launched
+   - Monitors data/working/labels/ directory
+   - Skips all pre-labeled files (modified before start)
+   - Detects files you saved (modified after start, stable 60s)
+   - Validates YOLO format
+   - Moves image → data/verified/images/
+   - Moves label → data/verified/labels/
+   - Logs in verification tracker as "verified"
    ↓
 3. Training watcher counts files → triggers at 50 images
    (first 3 iterations: 25 images for faster feedback)
@@ -145,8 +210,10 @@ x-anylabeling  # Open Dir: data/verified/ (save directly)
 ```
 
 **Key Points:**
+- **Manual verification** = You review/correct in X-AnyLabeling
+- **Automatic movement** = Script moves after 60s stability (you've moved to next image)
 - `yolo-pipeline-watch` monitors `data/verified/` (NOT `data/working/`)
-- `auto_move_verified.py` handles working/ → verified/ movement
+- `auto_move_verified.py` handles working/ → verified/ movement with verification tracking
 - Training only triggers from verified/ directory
 - Model promoted only if evaluation metrics improve
 
@@ -169,16 +236,41 @@ yolo-pipeline-score --top 20
 
 ## CLI Commands
 
+### Process Management (NEW in v0.2.0)
+
+```bash
+# Launch all services with one command
+yolo-pipeline run [--no-doctor] [--no-auto-move] [--debug]
+
+# Health check before starting
+yolo-pipeline-doctor
+```
+
+**What `yolo-pipeline run` does:**
+1. Runs `yolo-pipeline-doctor` (validates structure, configs, annotations, model)
+2. Launches 3 services: auto-move watcher, training watcher, status monitor
+3. Shows real-time logs from all services
+4. Handles graceful shutdown on Ctrl+C (SIGINT/SIGTERM)
+5. Cleans up processes on exit
+
 ### Helper Scripts
 
 ```bash
 # View setup instructions for 4-terminal workflow
 ./scripts/start_pipeline.sh
 
-# Automatic file movement (working/ → verified/)
+# Automatic file movement (working/labels/ → verified/labels/, images/)
+# Records start timestamp, only moves files modified AFTER that time
+# Pre-labeled files are skipped until you open/save in X-AnyLabeling
+# Monitors labels/, moves both image and label to verified subdirectories
 python scripts/auto_move_verified.py [--interval 60] [--stability 60]
 
-# Manual batch movement
+# Check verification status (verified vs unverified images)
+python scripts/track_verification.py
+python scripts/track_verification.py --list-unverified
+python scripts/track_verification.py --scan  # Scan working directory
+
+# Manual batch movement (Option B)
 ./scripts/move_verified.sh              # Interactive mode
 ./scripts/move_verified.sh --all        # Move all files
 ./scripts/move_verified.sh pattern      # Move files matching pattern
@@ -194,7 +286,7 @@ yolo-pipeline-init --project-name <name> --classes <class1> <class2> ...
 yolo-pipeline-watch [--config configs/pipeline_config.yaml]
 ```
 
-Monitors `data/working/` and auto-triggers training.
+Monitors `data/verified/` and auto-triggers training when threshold reached.
 
 ### Manual Training
 ```bash
