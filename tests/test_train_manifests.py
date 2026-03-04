@@ -23,6 +23,10 @@ def setup_training_env(tmp_path):
     test_labels.mkdir(parents=True)
     test_images.mkdir(parents=True)
 
+    # Create classes.txt in verified directory
+    verified_dir = tmp_path / "data" / "verified"
+    (verified_dir / "classes.txt").write_text("boat\n")
+
     # Create training data (20 images)
     for i in range(20):
         (verified_labels / f"img{i:03d}.txt").write_text("0 0.5 0.5 0.1 0.1")

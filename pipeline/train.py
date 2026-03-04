@@ -87,6 +87,34 @@ def _make_relative_safe(path: Path, root: Path) -> str:
         return str(path.absolute())
 
 
+def load_classes_from_file(classes_file: Path) -> list:
+    """Load class names from classes.txt file.
+
+    Args:
+        classes_file: Path to classes.txt file
+
+    Returns:
+        List of class names (non-empty lines)
+
+    Raises:
+        FileNotFoundError: If classes.txt doesn't exist
+    """
+    if not classes_file.exists():
+        raise FileNotFoundError(f"Classes file not found: {classes_file}")
+
+    classes = []
+    with open(classes_file, 'r') as f:
+        for line in f:
+            class_name = line.strip()
+            if class_name:  # Skip empty lines
+                classes.append(class_name)
+
+    if not classes:
+        raise ValueError(f"No classes found in {classes_file}")
+
+    return classes
+
+
 def create_data_yaml(
     train_manifest: Path,
     eval_manifest: Path,
@@ -220,12 +248,17 @@ def train_model(
     print(f"  Train: {train_count} images")
     print(f"  Eval: {eval_count} images")
 
+    # Load classes from verified/classes.txt (source of truth)
+    classes_file = paths.verified_dir() / "classes.txt"
+    classes = load_classes_from_file(classes_file)
+    print(f"  Classes: {len(classes)} classes from {classes_file.name}")
+
     # Create data.yaml
     create_data_yaml(
         train_manifest=paths.train_manifest(),
         eval_manifest=paths.eval_manifest(),
         test_dir=paths.test_dir(),
-        classes=pipeline_config.classes,
+        classes=classes,
         output_path=data_yaml,
         root_dir=paths.root_dir
     )

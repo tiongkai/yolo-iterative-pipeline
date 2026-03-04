@@ -1,8 +1,15 @@
 project_name: "yolo-iterative-pipeline"
+# NOTE: Classes are read from verified/classes.txt during training (source of truth)
+# This list is for reference only and fallback validation
 classes:
-  - "class1"
-  - "class2"
-  - "class3"
+  - "boat-rgb"
+  - "human head"
+  - "human torso"
+  - "outboard motor-rgb"
+  - "boat"
+  - "human"
+  - "outboard motor"
+  - "human-rgb"
 
 # Trigger settings
 trigger_threshold: 50

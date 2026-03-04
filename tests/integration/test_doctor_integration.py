@@ -33,6 +33,10 @@ def valid_pipeline_structure(tmp_path):
     (tmp_path / "configs").mkdir(parents=True)
     (tmp_path / "logs").mkdir(parents=True)
 
+    # Create classes.txt in verified and working directories
+    (tmp_path / "data" / "verified" / "classes.txt").write_text("boat\nhuman\nmotor\n")
+    (tmp_path / "data" / "working" / "classes.txt").write_text("boat\nhuman\nmotor\n")
+
     # Create valid pipeline_config.yaml
     pipeline_config = {
         "project_name": "test_project",

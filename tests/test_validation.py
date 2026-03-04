@@ -324,6 +324,10 @@ def test_validate_annotations_pass(setup_test_structure):
     # Create valid annotation files
     labels_dir = root / "data" / "verified" / "labels"
     images_dir = root / "data" / "verified" / "images"
+    verified_dir = root / "data" / "verified"
+
+    # Create classes.txt
+    (verified_dir / "classes.txt").write_text("class1\nclass2\n")
 
     # Create matching image and label
     (labels_dir / "img001.txt").write_text("0 0.5 0.5 0.1 0.1\n1 0.3 0.3 0.2 0.2")
