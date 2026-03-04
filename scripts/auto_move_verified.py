@@ -636,6 +636,9 @@ def auto_move_loop(
                 logger.info(f"Copied {moved_count} files. Total verified: {verified_count}")
                 logger.info(f"  Progress: {stats['total_verified']} verified / {stats['total']} total ({stats['verification_rate']:.1f}%)")
                 logger.info(f"  Note: Images remain in working/ for continued annotation")
+            elif verified_count_checked > 0:
+                # Only log if we found verified files but didn't move them (e.g., duplicates)
+                logger.debug(f"Found {verified_count_checked} verified files, but all already exist in verified/")
 
             # Wait before next check
             time.sleep(check_interval)

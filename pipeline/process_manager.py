@@ -159,20 +159,17 @@ class ProcessManager:
             self.processes.append(("watcher", watcher_proc))
             logger.info("✓ Started training watcher")
 
-            # Launch monitor with watch (refresh every 5 seconds)
-            monitor_cmd = ["watch", "-n", "5", "yolo-pipeline-monitor"]
-            monitor_proc = subprocess.Popen(
-                monitor_cmd,
-                stdout=None,  # Stream to console
-                stderr=None,
-                text=True
-            )
-            self.processes.append(("monitor", monitor_proc))
-            logger.info("✓ Started status monitor (refreshes every 5s)")
-
             logger.info("\n" + "="*60)
             logger.info("🚀 Pipeline is running!")
             logger.info("="*60)
+            logger.info("Services started:")
+            if not no_auto_move:
+                logger.info("  • Auto-move watcher (working/ → verified/)")
+            logger.info("  • Training watcher (triggers at 50 images)")
+            logger.info("")
+            logger.info("To monitor status in a separate terminal:")
+            logger.info("  watch -n 5 yolo-pipeline-monitor")
+            logger.info("")
             logger.info("Press Ctrl+C to stop all services")
             logger.info("="*60 + "\n")
 

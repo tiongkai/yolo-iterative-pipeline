@@ -3,10 +3,10 @@
 ## ✅ Setup Complete!
 
 Your YOLO Iterative Pipeline is ready with:
-- **1,332 images** in `data/working/` ready for manual verification
-- **1,332 pre-labeled annotations** converted from detections.json (YOLO format)
-- **3 classes**: boat, human, outboard motor
-- **Verification tracking** initialized (0 verified, 1,332 unverified)
+- **1,568 images** in `data/working/` ready for manual verification
+- **1,568 pre-labeled annotations** converted from detections.json (YOLO format)
+- **7 classes**: boat-rgb, human head, human torso, outboard motor-rgb, boat, human, outboard motor
+- **Verification tracking** initialized (check status with: `python scripts/track_verification.py`)
 
 **Important:** These are pre-labeled annotations from SAM3 that require manual verification:
 - Boxes may be too tight/loose
@@ -26,8 +26,8 @@ yolo-pipeline-run
 
 **What it does:**
 - Runs health check (validates structure, configs, annotations)
-- Launches 3 background services: auto-move, training watcher, status monitor
-- Shows real-time logs from all services
+- Launches 2 background services: auto-move watcher, training watcher
+- Logs only when files are moved or training triggers (no spam!)
 - Graceful shutdown on Ctrl+C
 
 **Then open X-AnyLabeling in a separate terminal:**
@@ -35,7 +35,12 @@ yolo-pipeline-run
 xanylabeling  # Open Dir: data/working/
 ```
 
-That's it! Just 2 terminals instead of 4.
+**Optional: Monitor status in a third terminal:**
+```bash
+watch -n 5 yolo-pipeline-monitor
+```
+
+That's it! Just 2-3 terminals instead of 4.
 
 **Optional flags:**
 ```bash
@@ -208,10 +213,10 @@ When X-AnyLabeling opens:
 python scripts/track_verification.py
 
 # Output:
-# ✓ Verified:   150
-# ⚠ Unverified: 1,182
-#   Total:      1,332
-#   Progress:   11.3%
+# ✓ Verified:   20
+# ⚠ Unverified: 1,548
+#   Total:      1,568
+#   Progress:   1.3%
 ```
 
 **Manual checks:**
@@ -237,7 +242,7 @@ python scripts/track_verification.py --list-unverified  # Show unverified images
 
 ## 🎯 Expected Timeline
 
-With 1,332 images and Option A workflow:
+With 1,568 images and automatic workflow:
 
 | Milestone | Images Verified | Cumulative Time | Model Performance | Action |
 |-----------|----------------|-----------------|-------------------|--------|
@@ -245,7 +250,7 @@ With 1,332 images and Option A workflow:
 | **Iteration 1** | 100-200 | ~3-4 hours | mAP50: 0.75-0.82 | Good assistance, speeds up verification |
 | **Iteration 2-3** | 300-500 | ~8-12 hours | mAP50: 0.82-0.88 | Production-ready with oversight |
 | **Iteration 4+** | 700-1000 | ~20-30 hours | mAP50: 0.88-0.93 | High accuracy, minimal corrections |
-| **Complete** | 1,332 | ~35-45 hours | mAP50: 0.90+ | Full dataset verified |
+| **Complete** | 1,568 | ~40-50 hours | mAP50: 0.90+ | Full dataset verified |
 
 **Time Savings:** ~30-50% faster than manual annotation from scratch
 
