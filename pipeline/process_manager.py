@@ -159,8 +159,8 @@ class ProcessManager:
             self.processes.append(("watcher", watcher_proc))
             logger.info("✓ Started training watcher")
 
-            # Launch monitor (stream its output)
-            monitor_cmd = ["yolo-pipeline-monitor"]
+            # Launch monitor with watch (refresh every 5 seconds)
+            monitor_cmd = ["watch", "-n", "5", "yolo-pipeline-monitor"]
             monitor_proc = subprocess.Popen(
                 monitor_cmd,
                 stdout=None,  # Stream to console
@@ -168,7 +168,7 @@ class ProcessManager:
                 text=True
             )
             self.processes.append(("monitor", monitor_proc))
-            logger.info("✓ Started status monitor")
+            logger.info("✓ Started status monitor (refreshes every 5s)")
 
             logger.info("\n" + "="*60)
             logger.info("🚀 Pipeline is running!")
