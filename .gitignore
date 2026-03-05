@@ -1,6 +1,11 @@
 # Data
 data9/
 processed_data/
+logs/
+*.onnx
+data/
+processed-data/
+runs/
 
 # Data directories (keep structure, ignore content)
 data/raw/*
