@@ -348,7 +348,7 @@ def export_to_onnx(model_path: Path, output_path: Path, imgsz: int = 1280) -> bo
         model = YOLO(str(model_path))
         
         # Export to ONNX (saves to same directory as model)
-        onnx_path = model.export(format='onnx', imgsz=imgsz, verbose=False)
+        onnx_path = model.export(format='onnx', imgsz=imgsz, opset=21, verbose=False)
         
         # Copy to desired output location
         if Path(onnx_path).exists():

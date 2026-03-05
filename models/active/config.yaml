@@ -1,0 +1,14 @@
+type: yolo11
+display_name: yolo11n-boat
+name: boat-detection
+model_path: best.onnx
+nc: 8
+names:
+  - boat-rgb
+  - human head
+  - human torso
+  - outboard motor-rgb
+  - boat
+  - human
+  - outboard motor
+  - human-rgb
