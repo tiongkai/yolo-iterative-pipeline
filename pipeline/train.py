@@ -332,10 +332,43 @@ def train_model(
     return version, checkpoint_dir
 
 
+def export_to_onnx(model_path: Path, output_path: Path, imgsz: int = 1280) -> bool:
+    """Export YOLO model to ONNX format.
+
+    Args:
+        model_path: Path to .pt model file
+        output_path: Path to save .onnx file
+        imgsz: Input image size
+
+    Returns:
+        True if export succeeded, False otherwise
+    """
+    try:
+        print("  Exporting to ONNX format...")
+        model = YOLO(str(model_path))
+        
+        # Export to ONNX (saves to same directory as model)
+        onnx_path = model.export(format='onnx', imgsz=imgsz, verbose=False)
+        
+        # Copy to desired output location
+        if Path(onnx_path).exists():
+            shutil.copy2(onnx_path, output_path)
+            print(f"  ✓ ONNX model saved to {output_path.name}")
+            return True
+        else:
+            print(f"  ⚠️  ONNX export failed")
+            return False
+    except Exception as e:
+        print(f"  ⚠️  ONNX export error: {e}")
+        return False
+
+
 def promote_model(
     checkpoint_dir: Path,
     active_dir: Path,
     paths: 'PathManager'
+,
+    export_onnx: bool = True
 ) -> bool:
     """Promote model to active if it improved.
 
@@ -344,6 +377,7 @@ def promote_model(
         active_dir: Active model directory
         paths: PathManager instance
 
+        export_onnx: Whether to export to ONNX format (default: True)
     Returns:
         True if promoted, False otherwise
     """
@@ -371,6 +405,11 @@ def promote_model(
             active_link.symlink_to(best_pt.absolute())
 
             print(f"✓ Model promoted to active")
+            
+            # Export to ONNX for X-AnyLabeling
+            if export_onnx:
+                onnx_output = active_dir / "best.onnx"
+                export_to_onnx(best_pt, onnx_output)
             return True
         else:
             print(f"⚠️  Warning: best.pt not found in {checkpoint_dir}")
