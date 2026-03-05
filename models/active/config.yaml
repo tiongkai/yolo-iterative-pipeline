@@ -1,9 +1,12 @@
-type: yolo11
-display_name: yolo11n-boat
-name: boat-detection
+type: yolov8
+name: boat-detection-yolo11n
+display_name: YOLO11n Boat Detection
 model_path: best.onnx
+input_width: 1280
+input_height: 1280
+stride: 32
 nc: 8
-names:
+classes:
   - boat-rgb
   - human head
   - human torso
