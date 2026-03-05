@@ -265,6 +265,23 @@ With 1,568 images and automatic workflow:
 - Process manager gracefully shuts down all services
 - Close X-AnyLabeling: `File` → `Exit`
 
+Quick check/remove command:
+Check if lock exists, run 
+`ls logs/.training.lock 2>/dev/null && echo "Lock exists" || echo "No lock"`
+
+Remove if stale (no training running) run `rm logs/.training.lock`
+
+  When to Delete Cache Files:
+  - After changing class count
+  - After modifying class names
+  - After adding/removing label files
+  - If you see class count errors
+
+  Quick command:
+  ### Remove all YOLO caches
+  
+  find data -name "*.cache" -type f -delete
+
 **Method 2 (4-Terminal Workflow):**
 1. Terminal 1 (auto-move): Press `Ctrl+C`
 2. Terminal 2 (training watcher): Press `Ctrl+C`
@@ -385,3 +402,100 @@ Questions? Check these resources:
   yolo-pipeline-monitor --help       # Status monitor
   python scripts/track_verification.py --help  # Verification tracking
   ```
+
+## 🔄 Starting a New Project
+
+If you want to reset the pipeline for a completely different project (new classes/dataset):
+
+### Quick Reset with Script
+
+```bash
+# Reset everything (backs up automatically with timestamp)
+./scripts/reset_for_new_project.sh
+```
+
+**What it does:**
+- ✅ Backs up current data, models, and logs to `backups/TIMESTAMP/`
+- 🗑️ Clears verified data, active models, checkpoints
+- 🗑️ Clears training history and cache files
+- 🗑️ Resets verification tracking
+- 📋 Shows next-steps instructions
+
+**After reset:**
+
+1. **Update classes for new project:**
+   ```bash
+   cat > data/verified/classes.txt << 'EOF'
+   person
+   car
+   dog
+   EOF
+   
+   cp data/verified/classes.txt data/working/classes.txt
+   ```
+
+2. **Add new images:**
+   ```bash
+   cp /path/to/new/images/* data/working/images/
+   ```
+
+3. **Update config (optional):**
+   ```bash
+   nano configs/pipeline_config.yaml
+   # Update classes list (for reference)
+   # Adjust trigger_threshold if needed
+   ```
+
+4. **Start training from scratch:**
+   ```bash
+   source venv/bin/activate
+   python -m pipeline.train --from-scratch
+   ```
+
+5. **Or run the full pipeline:**
+   ```bash
+   yolo-pipeline-run
+   ```
+
+### Manual Reset (More Control)
+
+```bash
+# 1. Backup old data
+BACKUP="backups/$(date +%Y%m%d_%H%M%S)"
+mkdir -p $BACKUP
+cp -r data/verified $BACKUP/
+cp -r models/checkpoints $BACKUP/
+cp logs/training_history.json $BACKUP/
+
+# 2. Clear everything
+rm -rf data/verified/images/* data/verified/labels/*
+rm -f models/active/best.pt models/active/best.onnx
+rm -rf models/checkpoints/*
+rm -f logs/training_history.json logs/priority_queue.txt
+find data -name "*.cache" -delete
+
+# 3. Update classes
+nano data/verified/classes.txt
+cp data/verified/classes.txt data/working/classes.txt
+
+# 4. Train from scratch
+source venv/bin/activate
+python -m pipeline.train --from-scratch
+```
+
+### Training Flags
+
+| Flag | When to Use | Effect |
+|------|-------------|--------|
+| **No flag** | Normal iteration | Resumes from active model (smart resume) |
+| **`--from-scratch`** | New project or reset | Starts fresh from pretrained YOLO11n |
+
+**Example:**
+```bash
+# Continue from existing model (default)
+python -m pipeline.train
+
+# Start fresh (new project)
+python -m pipeline.train --from-scratch
+```
+

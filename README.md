@@ -491,6 +491,39 @@ yolo-pipeline-export --version v005 --formats onnx
 yolo-pipeline-export --version v005 --formats tensorrt
 ```
 
+### Starting a New Project
+
+To reset the pipeline for a completely different project (new classes/dataset):
+
+```bash
+# Quick reset (backs up everything automatically)
+./scripts/reset_for_new_project.sh
+
+# Then update classes
+cat > data/verified/classes.txt << 'EOC'
+person
+car
+dog
+EOC
+cp data/verified/classes.txt data/working/classes.txt
+
+# Add new images and train from scratch
+source venv/bin/activate
+python -m pipeline.train --from-scratch
+```
+
+**What the reset script does:**
+- Backs up existing data/models/logs to `backups/TIMESTAMP/`
+- Clears verified data, active models, and checkpoints
+- Resets training history and verification tracking
+- Removes YOLO cache files
+
+**Training flags:**
+- No flag: Resume from active model (smart resume)
+- `--from-scratch`: Start fresh from pretrained YOLO11n
+
+See `QUICKSTART.md` for detailed reset instructions.
+
 ### Health Check
 
 ```bash
