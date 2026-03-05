@@ -12,12 +12,12 @@ classes:
   - "human-rgb"
 
 # Trigger settings
-trigger_threshold: 50
+trigger_threshold: 100
 early_trigger: 25
-min_train_images: 50
+min_train_images: 25  # Must be <= early_trigger
 
 # Data splits
-eval_split_ratio: 0.15
+eval_split_ratio: 0.10
 stratify: true
 
 # Active learning weights

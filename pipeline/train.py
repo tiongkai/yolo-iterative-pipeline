@@ -272,6 +272,8 @@ def train_model(
 
     # Train
     print(f"Training on {train_count} images...")
+    checkpoint_dir = paths.checkpoint_dir() / run_name  # Known path before training
+
     results = model.train(
         data=str(data_yaml),
         epochs=yolo_config.epochs,
@@ -295,6 +297,14 @@ def train_model(
         exist_ok=True,
     )
 
+    # Verify training completed successfully
+    if not checkpoint_dir.exists():
+        raise RuntimeError(f"Training failed: checkpoint directory not created at {checkpoint_dir}")
+
+    weights_dir = checkpoint_dir / "weights"
+    if not (weights_dir / "best.pt").exists():
+        raise RuntimeError(f"Training failed: best.pt not found at {weights_dir}")
+
     # Evaluate
     print("Evaluating on eval set...")
     eval_metrics = evaluate_model(model, data_yaml, split="val")
@@ -314,9 +324,6 @@ def train_model(
         training_time_minutes=training_time,
         notes="Bootstrap training on SAM3" if bootstrap else ""
     )
-
-    # Get checkpoint directory
-    checkpoint_dir = Path(results.save_dir)
 
     print(f"\n✓ Training complete ({training_time:.1f} min)")
     print(f"  Eval mAP50: {eval_metrics['mAP50']:.3f}, F1: {eval_metrics['f1']:.3f}")
