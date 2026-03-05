@@ -121,6 +121,10 @@ class FileWatcher:
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
         self.lock_file.touch()
 
+        # Capture count BEFORE training starts (not after)
+        # This ensures files added during training are counted as "new" for next iteration
+        count_before_training = self.count_verified_images()
+
         try:
             # Load configs
             pipeline_config = PipelineConfig.from_yaml(self.pipeline_config_path)
@@ -168,7 +172,7 @@ class FileWatcher:
                         pass  # Notification is optional
 
             # Update state
-            self.last_train_count = self.count_verified_images()
+            self.last_train_count = count_before_training
             self.iteration += 1
 
         except Exception as e:
