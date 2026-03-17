@@ -258,6 +258,45 @@ With 1,568 images and automatic workflow:
 - Model improves iteratively (better predictions each round)
 - Only need to correct, not draw from scratch
 
+## 🔁 Manual Model Promotion
+
+The pipeline auto-promotes a model only if its eval mAP50 improves over the previous version. If you want to force-promote a specific version (e.g. it trained on more images but scored slightly lower), do this in a separate terminal:
+
+**1. Check available versions and their metrics:**
+```bash
+yolo-pipeline-monitor --history
+```
+
+**2. Find the checkpoint directory for the version you want:**
+```bash
+ls models/checkpoints/ | grep v025   # replace v025 with your target version
+```
+
+**3. Update the active model symlink:**
+```bash
+cd /home/lenovo6/TiongKai/yolo-iterative-pipeline
+source venv/bin/activate
+
+ln -sf $(pwd)/models/checkpoints/model_v006_20260316_083417/weights/best.pt models/active/best.pt
+```
+
+**4. Re-export ONNX for X-AnyLabeling:**
+```bash
+python3 -c "
+from pipeline.train import export_to_onnx
+from pathlib import Path
+export_to_onnx(
+    Path('models/checkpoints/model_v006_20260316_083417/weights/best.pt'),
+    Path('models/active/best.onnx'),
+    imgsz=1280
+)
+"
+```
+
+**5. Reload in X-AnyLabeling:** AI → Load Model → select `models/active/best.onnx`
+
+> **Note:** The running watcher will overwrite the symlink if a future model auto-promotes (i.e. improves on eval mAP). Your manually promoted model stays active until then.
+
 ## 🛑 Stopping the Pipeline
 
 **Method 1 (Single Command):**

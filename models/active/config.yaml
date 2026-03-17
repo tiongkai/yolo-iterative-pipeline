@@ -1,4 +1,4 @@
-type: yolov8
+type: yolo11
 name: boat-detection-yolo11n
 display_name: YOLO11n Boat Detection
 model_path: best.onnx

@@ -12,7 +12,7 @@ classes:
   - "human-rgb"
 
 # Trigger settings
-trigger_threshold: 100
+trigger_threshold: 25
 early_trigger: 25
 min_train_images: 25  # Must be <= early_trigger
 
