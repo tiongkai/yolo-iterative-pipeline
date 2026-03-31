@@ -108,37 +108,68 @@ xanylabeling
 
 **Installation:** See the official get started guide: https://github.com/CVHub520/X-AnyLabeling/blob/main/docs/en/get_started.md
 
-When X-AnyLabeling opens:
+### Step 0: Enable the Verified Flag (First-Time Setup)
 
-1. **Open Directory**
-   - Click `File` → `Open Dir`
-   - Navigate to: `/home/lenovo6/TiongKai/yolo-iterative-pipeline/data/working/`
-   - Click `Select Folder`
-   - X-AnyLabeling auto-detects `images/` and `labels/` subdirectories
+The "verified" checkmark is not enabled by default — it must be added to your X-AnyLabeling config.
 
-2. **Configure Classes** (auto-loads from working/classes.txt):
-   - Click `Edit` → `Label Settings`
-   - Ensure these classes are listed:
-     - boat
-     - human
-     - outboard motor
-   - Click `OK`
+Edit `~/.xanylabelingrc` (create it if it doesn't exist) and add:
 
-3. **Load Model** (optional, for AI-assisted annotation):
-   - Click `AI` → `Load Model`
-   - Navigate to: `models/active/best.pt`
-   - (Skip this if no model exists yet - bootstrap training will create one)
+```yaml
+flags:
+- verified
+```
 
-4. **Start Annotating!**
-   - Review the existing annotations (from detections.json)
-   - Correct any mistakes:
-     - Too tight/loose boxes → drag corners to adjust
-     - Wrong class → click box, select new class
-     - Missing objects → press `W` and draw new boxes
-     - False positives → select box, press `Delete`
-   - **Press `Space` to mark as verified** (sets verified flag)
-   - Press `Ctrl+S` to save after each image
-   - Move to next image with `D`
+Or run this one-liner:
+
+```bash
+# Append if file exists, or create it
+python3 -c "
+import os, yaml
+rc = os.path.expanduser('~/.xanylabelingrc')
+cfg = yaml.safe_load(open(rc)) if os.path.exists(rc) else {}
+cfg['flags'] = ['verified']
+yaml.dump(cfg, open(rc, 'w'), default_flow_style=False)
+print('Done — verified flag added to', rc)
+"
+```
+
+Restart X-AnyLabeling after making this change. You should see a **flag panel** on the side with a "verified" checkbox (toggled with `Space`).
+
+---
+
+### Step 1: Open Directory
+
+- Click `File` → `Open Dir`
+- Navigate to: `data/working/`
+- Click `Select Folder`
+
+### Step 2: Load YOLO Annotations
+
+After opening the directory, the images will load but annotations won't appear yet. You need to import them:
+
+- Hover over **`Upload`** in the menu bar
+- Click **`Upload YOLO HBB Annotations`**
+- **First**, select the classes file: `data/working/classes.txt`
+- **Then**, select the labels directory: `data/working/labels/`
+- Annotations will now appear on the images
+
+### Step 3: Load Model (optional, for AI-assisted annotation)
+
+- Click `AI` → `Load Model`
+- Navigate to: `models/active/best.onnx`
+- (Skip this if no model exists yet — bootstrap training will create one)
+
+### Step 4: Start Annotating
+
+- Review the existing annotations (from detections.json)
+- Correct any mistakes:
+  - Too tight/loose boxes → drag corners to adjust
+  - Wrong class → click box, select new class
+  - Missing objects → press `R` and draw new boxes
+  - False positives → select box, press `Delete`
+- **Press `Space` to mark as verified** (checks the "verified" flag in the side panel)
+- Press `Ctrl+S` to save after each image
+- Move to next image with `D`
 
 ## 🔄 Workflow
 
