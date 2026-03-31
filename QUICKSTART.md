@@ -106,6 +106,8 @@ xanylabeling
 
 ## 📝 X-AnyLabeling Setup
 
+**Installation:** See the official get started guide: https://github.com/CVHub520/X-AnyLabeling/blob/main/docs/en/get_started.md
+
 When X-AnyLabeling opens:
 
 1. **Open Directory**
