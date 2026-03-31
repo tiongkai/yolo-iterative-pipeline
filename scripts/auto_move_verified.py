@@ -584,43 +584,47 @@ def auto_move_loop(
 
                 # Atomically move image and create label
                 try:
-                    # Check if destination already exists
-                    if label_path.exists() or image_dst.exists():
-                        logger.warning(f"Destination already exists for {image_name}, skipping")
-                        continue
+                    label_exists = label_path.exists()
+                    image_exists = image_dst.exists()
+
+                    # If label already exists, only overwrite if JSON is newer
+                    if label_exists:
+                        json_mtime = json_path.stat().st_mtime
+                        label_mtime = label_path.stat().st_mtime
+                        if json_mtime <= label_mtime:
+                            continue  # Already up to date
+                        logger.info(f"Updated annotation detected for {image_name}, overwriting verified label")
 
                     # Step 1: Write label file with .tmp extension
                     with open(label_tmp, 'w') as f:
                         f.write('\n'.join(yolo_lines) + '\n')
 
-                    # Step 2: Copy image with .tmp extension
-                    shutil.copy2(str(image_path), str(image_tmp))
-
-                    # Step 3: Verify both temp files exist
-                    if not label_tmp.exists() or not image_tmp.exists():
-                        raise IOError("Temp file creation failed")
-
-                    # Step 4: Rename atomically (atomic on POSIX)
+                    # Step 2: Rename label atomically (overwrites if exists)
                     os.rename(str(label_tmp), str(label_path))
-                    os.rename(str(image_tmp), str(image_dst))
 
-                    # Step 5: Keep original image in working/ (copied, not moved)
-                    # Image stays in working/images/ for continued annotation
-                    # Copy is now in verified/images/ for training
+                    # Step 3: Copy image only if not already in verified/
+                    if not image_exists:
+                        shutil.copy2(str(image_path), str(image_tmp))
+                        if not image_tmp.exists():
+                            raise IOError("Image temp file creation failed")
+                        os.rename(str(image_tmp), str(image_dst))
 
                     # Log as verified in tracker
                     tracker.mark_verified(image_path.name)
                     moved_count += 1
-                    logger.info(f"✓ Copied: {image_name} → verified/ ({len(yolo_lines)} annotations)")
+                    if label_exists:
+                        logger.info(f"✓ Updated: {image_name} → verified/ ({len(yolo_lines)} annotations)")
+                    else:
+                        logger.info(f"✓ Copied: {image_name} → verified/ ({len(yolo_lines)} annotations)")
 
                 except Exception as e:
                     logger.error(f"Error processing {json_path.name}: {e}")
 
-                    # Rollback: remove any files that were created
+                    # Rollback: only remove files that were newly created (not pre-existing)
                     try:
-                        if label_path.exists():
+                        if not label_exists and label_path.exists():
                             label_path.unlink()
-                        if image_dst.exists():
+                        if not image_exists and image_dst.exists():
                             image_dst.unlink()
                         if label_tmp.exists():
                             label_tmp.unlink()
