@@ -1,6 +1,6 @@
 """Metrics calculation and tracking for training pipeline."""
 
-from typing import Dict
+from typing import Dict, Optional
 import json
 from pathlib import Path
 from datetime import datetime
@@ -60,7 +60,7 @@ def append_training_history(
     version: str,
     train_images: int,
     eval_metrics: Dict[str, float],
-    test_metrics: Dict[str, float],
+    test_metrics: Optional[Dict[str, float]],
     training_time_minutes: float,
     notes: str = ""
 ):
@@ -84,7 +84,7 @@ def append_training_history(
         for key in ["mAP50", "f1"]:
             if key in eval_metrics and f"eval_{key}" in prev:
                 improvement[f"eval_{key}"] = eval_metrics[key] - prev[f"eval_{key}"]
-            if key in test_metrics and f"test_{key}" in prev:
+            if test_metrics and key in test_metrics and f"test_{key}" in prev:
                 improvement[f"test_{key}"] = test_metrics[key] - prev[f"test_{key}"]
 
     entry = {
@@ -92,7 +92,7 @@ def append_training_history(
         "timestamp": datetime.now().isoformat(),
         "train_images": train_images,
         **{f"eval_{k}": v for k, v in eval_metrics.items()},
-        **{f"test_{k}": v for k, v in test_metrics.items()},
+        **(({f"test_{k}": v for k, v in test_metrics.items()}) if test_metrics else {}),
         "training_time_minutes": training_time_minutes,
         "improvement": improvement,
         "notes": notes,

@@ -6,6 +6,7 @@ import time
 import shutil
 from datetime import datetime
 from ultralytics import YOLO
+import torch
 import yaml
 
 from pipeline.config import PipelineConfig, YOLOConfig
@@ -137,9 +138,13 @@ def create_data_yaml(
         "path": str(root_dir),
         "train": _make_relative_safe(train_manifest, root_dir),
         "val": _make_relative_safe(eval_manifest, root_dir),
-        "test": _make_relative_safe(test_dir, root_dir),
         "names": {i: name for i, name in enumerate(classes)}
     }
+
+    # Only include test split if the directory exists and has images
+    test_images = test_dir / "images" if test_dir.is_dir() else test_dir
+    if test_dir.exists() and any(test_images.glob("*")) if test_images.is_dir() else test_dir.exists():
+        data["test"] = _make_relative_safe(test_dir, root_dir)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
@@ -270,6 +275,13 @@ def train_model(
     version = get_next_version(log_path)
     run_name = f"model_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    # Resolve device — fall back to CPU if no GPU available
+    if torch.cuda.is_available():
+        device = yolo_config.device
+    else:
+        device = "cpu"
+        print("Warning: No GPU detected, training on CPU (this will be slow).")
+
     # Train
     print(f"Training on {train_count} images...")
     checkpoint_dir = paths.checkpoint_dir() / run_name  # Known path before training
@@ -279,7 +291,7 @@ def train_model(
         epochs=yolo_config.epochs,
         batch=yolo_config.batch_size,
         imgsz=yolo_config.imgsz,
-        device=yolo_config.device,
+        device=device,
         patience=yolo_config.patience,
         close_mosaic=yolo_config.close_mosaic,
         copy_paste=yolo_config.copy_paste,
@@ -309,8 +321,16 @@ def train_model(
     print("Evaluating on eval set...")
     eval_metrics = evaluate_model(model, data_yaml, split="val")
 
-    print("Evaluating on test set...")
-    test_metrics = evaluate_model(model, data_yaml, split="test")
+    # Evaluate on test set only if it exists
+    test_dir = paths.test_dir()
+    test_images_dir = test_dir / "images"
+    has_test = test_dir.exists() and test_images_dir.is_dir() and any(test_images_dir.iterdir())
+    if has_test:
+        print("Evaluating on test set...")
+        test_metrics = evaluate_model(model, data_yaml, split="test")
+    else:
+        print("No test set found — skipping test evaluation.")
+        test_metrics = None
 
     # Save training info
     training_time = (time.time() - start_time) / 60
@@ -327,7 +347,10 @@ def train_model(
 
     print(f"\n✓ Training complete ({training_time:.1f} min)")
     print(f"  Eval mAP50: {eval_metrics['mAP50']:.3f}, F1: {eval_metrics['f1']:.3f}")
-    print(f"  Test mAP50: {test_metrics['mAP50']:.3f}, F1: {test_metrics['f1']:.3f}")
+    if test_metrics:
+        print(f"  Test mAP50: {test_metrics['mAP50']:.3f}, F1: {test_metrics['f1']:.3f}")
+    else:
+        print("  Test metrics: N/A (no test set)")
 
     return version, checkpoint_dir
 
