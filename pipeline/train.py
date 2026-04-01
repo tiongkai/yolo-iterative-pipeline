@@ -275,9 +275,12 @@ def train_model(
     version = get_next_version(log_path)
     run_name = f"model_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    # Resolve device — fall back to CPU if no GPU available
+    # Resolve device — fall back to MPS or CPU if configured GPUs aren't available
     if torch.cuda.is_available():
         device = yolo_config.device
+    elif torch.backends.mps.is_available():
+        device = "mps"
+        print("Warning: CUDA not available, using Apple Silicon MPS.")
     else:
         device = "cpu"
         print("Warning: No GPU detected, training on CPU (this will be slow).")
@@ -371,7 +374,7 @@ def export_to_onnx(model_path: Path, output_path: Path, imgsz: int = 1280) -> bo
         model = YOLO(str(model_path))
         
         # Export to ONNX (saves to same directory as model)
-        onnx_path = model.export(format='onnx', imgsz=imgsz, opset=21, verbose=False)
+        onnx_path = model.export(format='onnx', imgsz=imgsz, opset=17, verbose=False)
         
         # Copy to desired output location
         if Path(onnx_path).exists():
