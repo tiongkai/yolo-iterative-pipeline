@@ -12,7 +12,7 @@ pip install -e .
 
 **Requirements:** Python 3.8+, `ultralytics >= 8.3.0`, `torch >= 2.0.0`
 
-**X-AnyLabeling:**
+**X-AnyLabeling** ([get started guide](https://github.com/CVHub520/X-AnyLabeling/blob/main/docs/en/get_started.md)):
 ```bash
 pip install "x-anylabeling-cvhub[cpu]"   # CPU / Mac
 pip install "x-anylabeling-cvhub[gpu]"   # NVIDIA GPU
