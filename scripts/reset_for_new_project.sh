@@ -30,6 +30,10 @@ fi
 echo "  🗑️  Clearing verified data..."
 rm -rf data/verified/images/* data/verified/labels/*
 
+# Clear working labels (old class IDs are invalid for the new project)
+echo "  🗑️  Clearing working labels..."
+rm -rf data/working/labels/*
+
 # 3. Clear models
 echo "  🗑️  Clearing active models..."
 rm -f models/active/best.pt models/active/best.onnx
