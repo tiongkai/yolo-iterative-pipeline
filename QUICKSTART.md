@@ -24,6 +24,17 @@ print('Done —', rc)
 
 Restart X-AnyLabeling. A **flag panel** with a "verified" checkbox will appear on the side.
 
+### Change Bounding Box Line Width
+
+If the default bounding boxes are too thin to see clearly, edit `~/.xanylabelingrc` and change the `line_width` value under the `shape` section:
+
+```yaml
+shape:
+  line_width: 3
+```
+
+Increase the value for thicker borders (default is 1). Restart X-AnyLabeling to apply.
+
 ---
 
 ## 2. Start the Pipeline
