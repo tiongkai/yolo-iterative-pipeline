@@ -38,6 +38,29 @@ rm -rf data/working/labels/*
 echo "  🗑️  Clearing active models..."
 rm -f models/active/best.pt models/active/best.onnx
 
+# Reset model config with new classes from verified/classes.txt
+if [ -f "data/verified/classes.txt" ]; then
+    echo "  🔄 Updating models/active/config.yaml with classes from data/verified/classes.txt..."
+    CLASSES_FILE="data/verified/classes.txt"
+    NC=$(grep -c . "$CLASSES_FILE")
+    {
+        echo "type: yolo11"
+        echo "name: detection-yolo11n"
+        echo "display_name: YOLO11n Detection"
+        echo "model_path: best.onnx"
+        echo "input_width: 1280"
+        echo "input_height: 1280"
+        echo "stride: 32"
+        echo "nc: $NC"
+        echo "classes:"
+        while IFS= read -r class_name; do
+            [ -n "$class_name" ] && echo "  - $class_name"
+        done < "$CLASSES_FILE"
+    } > models/active/config.yaml
+else
+    echo "  ⚠️  data/verified/classes.txt not found — update models/active/config.yaml manually after adding classes"
+fi
+
 echo "  🗑️  Clearing checkpoints..."
 rm -rf models/checkpoints/*
 
