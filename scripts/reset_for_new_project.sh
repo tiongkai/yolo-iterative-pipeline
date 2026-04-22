@@ -1,19 +1,31 @@
 #!/bin/bash
-# Reset pipeline for a new project
-# Usage: ./scripts/reset_for_new_project.sh
+# Reset pipeline for a new project or retrain from scratch
+# Usage: ./scripts/reset_for_new_project.sh [--models-only]
+#   --models-only  Reset models and training state only (keeps all data/)
 
 set -e
 
-echo "🔄 Resetting pipeline for new project..."
+MODELS_ONLY=false
+if [ "$1" = "--models-only" ]; then
+    MODELS_ONLY=true
+fi
+
+if [ "$MODELS_ONLY" = true ]; then
+    echo "🔄 Resetting models and training state (keeping data/)..."
+else
+    echo "🔄 Resetting pipeline for new project..."
+fi
 
 # 1. Backup old data
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="backups/$TIMESTAMP"
 mkdir -p "$BACKUP_DIR"
 
-if [ -d "data/verified/images" ] && [ "$(ls -A data/verified/images)" ]; then
-    echo "  📦 Backing up verified data to $BACKUP_DIR/verified/"
-    cp -r data/verified "$BACKUP_DIR/"
+if [ "$MODELS_ONLY" = false ]; then
+    if [ -d "data/verified/images" ] && [ "$(ls -A data/verified/images)" ]; then
+        echo "  📦 Backing up verified data to $BACKUP_DIR/verified/"
+        cp -r data/verified "$BACKUP_DIR/"
+    fi
 fi
 
 if [ -d "models/checkpoints" ] && [ "$(ls -A models/checkpoints)" ]; then
@@ -26,13 +38,14 @@ if [ -f "logs/training_history.json" ]; then
     cp logs/training_history.json "$BACKUP_DIR/"
 fi
 
-# 2. Clear verified data
-echo "  🗑️  Clearing verified data..."
-rm -rf data/verified/images/* data/verified/labels/*
+# 2. Clear data (full reset only)
+if [ "$MODELS_ONLY" = false ]; then
+    echo "  🗑️  Clearing verified data..."
+    rm -rf data/verified/images/* data/verified/labels/*
 
-# Clear working labels (old class IDs are invalid for the new project)
-echo "  🗑️  Clearing working labels..."
-rm -rf data/working/labels/*
+    echo "  🗑️  Clearing working labels..."
+    rm -rf data/working/labels/*
+fi
 
 # 3. Clear models
 echo "  🗑️  Clearing active models..."
@@ -40,7 +53,7 @@ rm -f models/active/best.pt models/active/best.onnx
 
 # Reset model config with new classes from verified/classes.txt
 if [ -f "data/verified/classes.txt" ]; then
-    echo "  🔄 Updating models/active/config.yaml with classes from data/verified/classes.txt..."
+    echo "  🔄 Rebuilding models/active/config.yaml from data/verified/classes.txt..."
     CLASSES_FILE="data/verified/classes.txt"
     NC=$(grep -c . "$CLASSES_FILE")
     {
@@ -74,23 +87,31 @@ rm -f logs/.training.lock
 echo "  🗑️  Clearing YOLO cache..."
 find data -name "*.cache" -type f -delete
 
-# 6. Reset verification tracking
-echo "  🗑️  Resetting verification tracking..."
-cat > logs/verification_status.json << 'EOF'
+# 6. Reset verification tracking (full reset only)
+if [ "$MODELS_ONLY" = false ]; then
+    echo "  🗑️  Resetting verification tracking..."
+    cat > logs/verification_status.json << 'EOF'
 {
   "verified": [],
   "unverified": []
 }
 EOF
+fi
 
 echo ""
 echo "✅ Reset complete!"
 echo ""
-echo "📋 Next steps:"
-echo "  1. Update data/verified/classes.txt with your new classes"
-echo "  2. Copy to data/working/classes.txt"
-echo "  3. Add your new images to data/working/images/"
-echo "  4. Update configs/pipeline_config.yaml (optional)"
-echo "  5. Run: python -m pipeline.train --from-scratch"
+if [ "$MODELS_ONLY" = true ]; then
+    echo "📋 Next steps:"
+    echo "  1. Run: yolo-pipeline-run"
+    echo "  2. Training will retrain from scratch on existing verified data"
+else
+    echo "📋 Next steps:"
+    echo "  1. Update data/verified/classes.txt with your new classes"
+    echo "  2. Copy to data/working/classes.txt"
+    echo "  3. Add your new images to data/working/images/"
+    echo "  4. Update configs/pipeline_config.yaml (optional)"
+    echo "  5. Run: python -m pipeline.train --from-scratch"
+fi
 echo ""
 echo "💾 Backup saved to: $BACKUP_DIR"
