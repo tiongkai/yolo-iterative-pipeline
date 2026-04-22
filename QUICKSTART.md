@@ -146,6 +146,24 @@ find data -name "*.cache" -delete
 
 ---
 
+## Reset Pipeline
+
+**Retrain from scratch** (keeps all data, clears models and training state):
+
+```bash
+./scripts/reset_for_new_project.sh --models-only
+```
+
+**Full reset for a new project** (clears data, models, and training state):
+
+```bash
+./scripts/reset_for_new_project.sh
+```
+
+Both options back up checkpoints and training history to `backups/` before clearing, and rebuild `models/active/config.yaml` with classes from `data/verified/classes.txt`.
+
+---
+
 ## Manual Model Promotion
 
 If you want to force-promote a specific checkpoint:
